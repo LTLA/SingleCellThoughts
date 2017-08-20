@@ -45,6 +45,11 @@ As the technical variance is random, the parallel component of the noise should 
 In fact, when the technical noise is high, the loading vector can be skewed to capture the largest components of the orthogonal noise.
 This means that the earlier PCs tend to have the largest technical components, even though they also capture the biological signal.
 
+% Additivity of gene-wise variances in PCA just reflects the fact that we're looking at high-dimensional variance.
+% This has nothing to do with the independence of the genes (which is only relevant when you want to compute the variance of the sum).
+% Or in other words; we're just computing the squared distances of each cell from the center (origin).
+% This gives the same result if you do it all at once or sum the per-gene results.
+
 \section{Choosing the number of PCs to retain}
 Denote the variance explained by the $k$\textsuperscript{th} PC as $s^2_k$, with $K$ PCs in total.
 Assume that the first $k^*$ PCs contain the biological signal, contributing at least
