@@ -1,0 +1,191 @@
+\documentclass{article}
+\usepackage[margin=3cm]{geometry}
+\usepackage{natbib}
+\usepackage{amsmath}
+\usepackage{bm}
+
+% document begins here
+\begin{document}
+\vspace*{0.35in}
+
+% title goes here:
+\begin{flushleft}
+{\Large
+\textbf\newline{Modelling gene-specific technical noise in \textit{scran}}
+}
+\newline
+
+% authors go here:
+%\\
+Aaron T. L. Lun\textsuperscript{1,*}
+\\
+\bigskip
+\bf{1} Cancer Research UK Cambridge Institute, University of Cambridge, Li Ka Shing Centre, Robinson Way, Cambridge CB2 0RE, United Kingdom
+\\
+\bigskip
+* aaron.lun@cruk.cam.ac.uk
+
+\end{flushleft}
+
+\section{Overview}
+We consider the problem of modelling the technical noise in log-transformed normalized expression values from single-cell RNA-seq (scRNA-seq) data.
+We use log-transformed values rather than working on the raw scale, as differences between log-values directly represent log-fold changes.
+This is arguably more relevant than differences in the absolute scale of the counts.
+The log-transformation also provides some measure of variance stabilization for NB-distributed counts with a constant dispersion but a variable mean \citep{law2014voom}. 
+Without it, the trend would be pretty extreme and difficult to fit reliably, especially as the precision of the variance estimate will change with the mean.
+
+% You _could_ downweight the absolute differences based on the standard deviation, in order to adjust for the value of the mean.
+% However, this depends on a sensible estimate of the standard deviation - across the population? Subpopulations?
+% Also, the log-transformation seems better than square-rooting it, which is the VST for the Poisson only.
+% You could play around with various Box-Cox transformations, but the mean-variance trend is pretty extreme and probably won't go away just by changing lambda.
+
+\section{Linear modelling of expression values}
+Here we describe the basic process of variance estimation.
+Let $y_{ig}$ be the expression value of gene $g$ in cell $i$.
+Denote the vector of expression values across all cells for $g$ as $\bm{y}_g$, with length equal to the number of cells $n$.
+Assume that this can be expressed as a linear sum of $p$ predictors
+\[
+\bm{y}_g = \bm{X}\bm{\beta}_g + \bm{\epsilon}_{ig} \;,
+\]
+where $\bm{X}$ is a $n\times p$ matrix specifying the value of each predictor and each cell;
+$\bm{\beta}_g$ is a vector of coefficients, one for each predictor ($p$ in total);
+and $\bm{\epsilon}_{g}$ is a vector of random variables $\epsilon_{ig}$, representing the error for each observation.
+We assume that 
+\[
+    \epsilon_{ig} \sim \mbox{Normal}(0, \sigma^2_g)
+\]
+and is independently sampled for each observation.
+We also write
+\[
+\bm{\mu}_g = \bm{X}\bm{\beta}_g
+\]
+where $\bm{\mu}_g$ is a vector of length $n$ containing mean expression values $\mu_{ig} = E(y_{ig})$.
+
+For each gene, we fit a linear model to $\bm{y}_g$ using standard least-squares methods.
+In the fitted model, denote $\hat\mu_{ig}$ as the fitted value for each observation, with
+\[
+\bm{\hat\mu}_{g} = \bm{X} \bm{\hat\beta}_g
+\]
+where $\bm{\hat\beta}_g$ contains gene-specific estimates for the coefficients.
+We estimate $\sigma^2_g$ with
+\[
+\hat\sigma^2_g = \frac{\sum_{i=1}^{n} (y_{ig} - \hat\mu_{ig})^2}{n-p} \;.
+\] 
+In this manner, we obtain a variance estimate for each gene in the data set.
+We also obtain an average expression value $A_g$ for each gene by averaging $y_{ig}$ over all $i$.
+
+\section{Modelling the distribution of variance estimates}
+Consider a set of ``control'' genes that are \textit{not} highly variable. 
+Most commonly, each control gene $s$ is a spike-in transcript that has been added at the same quantity to each cell, though other definitions are possible.
+As $\epsilon_{is}$ are normally distributed, we have
+\[
+    \hat\sigma^2_s|\sigma^2_s \sim \frac{\sigma^2_s\chi^2_{n-p}}{n-p} \;.
+\]
+Further assume that $\sigma^2_s$ are distributed around a mean-variance trend $V(.)$ as
+\[
+\sigma^2_s \sim V(A_s) d_0 \chi^{-2}_{d_0}
+\]
+where $d_0$ is the prior degrees of freedom \citep{smyth2004linear}.
+This quantifies the variance in $\sigma^2_s$ due to gene-specific factors such as GC content or length or secondary structure affecting capture efficiency or amplification noise.
+From these two expressions, we obtain
+\begin{equation}
+    \hat\sigma^2_s \sim V(A_s)F(n-p, d_0) \label{eqn:estdist}
+\end{equation}
+which allows us to estimate $d_0$ and $V(.)$ from the observed distribution of $\hat\sigma^2_s$.
+
+\section{Estimating the distribution parameters}
+To estimate the parameters of the $\sigma^2_s$ distribution, we fit a trend $f(.)$ to $\log(\hat\sigma^2_s)$ against $A_s$.
+We use log-transformed values as $\exp[f(.)]$ guarantees positive values for $V(.)$.
+The fitted value of the trend for each $s$ is an estimate of the expectation of the log-values for genes with similar $A_s$, denoted as
+\[
+    f(A_s) \approx E_{|A_s}[\log(\hat\sigma^2_s)] = \log[V(A_s)] + E\{\log[F(n-p, d_0)]\} \;.
+\]
+Dividing $\hat\sigma^2_s$ by $\exp[f(A_s)]$ yields a scaled F-distribution independent of $A_s$, i.e.,
+\[
+    \frac{\hat\sigma^2_s}{\exp[f(A_s)]} \sim \Phi F(n-p, d_0) \;,
+\]
+where $\Phi = \exp(E\{\log[F(n-p, d_0)]\})^{-1}$. 
+Both $d_0$ and $\Phi$ can therefore be determined by robustly fitting an F-distribution to the above ratios \citep{phipson2016robust}.
+Multiplication of $\exp[f(.)]$ with $\Phi$ then yields an estimate of $V(.)$.
+
+In practice, we use a two-step procedure to fit $f(.)$.
+The first step uses a parametric curve that models the distinct shape of the mean-variance relationship for log-expression values in scRNA-seq data.
+Consider the following function
+\begin{equation}
+    f_1(x) = \frac{A x}{x^M + B} \label{eqn:paramtrend}
+\end{equation}
+with $A > 0$, $M > 1$ and $B > 0$.
+We use least-squares optimization to fit $f_1(.)$ to $\hat\sigma^2_s$ against $A_s$.
+We chose this function as it captures major features of the mean-variance trend including a linear increase from zero at low $x$, a smooth peak at moderate $x$ and an asymptotic decrease to zero as $x \to \infty$.
+In the second step, we compute
+\[
+    r_s = \hat\sigma^2_s/f_1(A_s) \;.
+\]
+We then fit a robust loess curve $f_2(.)$ to $\log(r_s)$ against $A_s$, and define
+\[
+    f(A_s) = \log[f_1(A_s)] + f_2(A_s)
+\]
+The second fit accounts for any variations from the relationship in Equation~\ref{eqn:paramtrend}, and also reduces the effect of any outliers.
+However, this is done \textit{after} factoring out $f_1(A_s)$, because a complex trend with strong gradients is difficult to fit directly with smoothing algorithms.
+
+\section{Modelling the technical noise for endogenous genes}
+Consider an endogenous gene $g$, which has a true expression of $y_{ig}^*$ in cell $i$.
+Let $\mbox{var}(y_{ig}^*) = \sigma^2_{(b)g}$, representing the underlying biological variation.
+The observed expression $y_{ig}$ is then sampled from $y_{ig}|y_{ig}^* \sim T_{ig}$ with $E(T_{ig}) = y^*_{ig}$, representing the effect of technical noise.
+The observed variance is 
+\begin{align*}
+    \sigma^2_g &= \mbox{var}[E(y_{ig}|y_{ig}^*)] + E[\mbox{var}(y_{ig}|y_{ig}^*)] \\
+               &= \sigma^2_{(b)g} +  E[\mbox{var}(y_{ig}|y_{ig}^*)]  \;.
+\end{align*}
+Denote $E[\mbox{var}(y_{ig}|y_{ig}^*)]$ as $\sigma^2_{(t)g}$.
+For a gene with abundance $A_g$, we estimate $\sigma^2_{(t)g}$ from the corresponding control genes.
+Specifically, we use the expectation of $\sigma^2_s$ at this abundance (Equation~\ref{eqn:estdist}), i.e., 
+\[
+    \hat\sigma^2_{(t)g} \approx E_{|A_g}[\sigma^2_s] = \frac{d_0V(A_g)}{d_0-2} \;. \label{eqn:techest}
+\]
+We can simply obtain an estimate of the biological component as
+\[
+    \hat\sigma^2_{(b)g} = \hat\sigma^2_g - \hat\sigma^2_{(t)g} \;,
+\]
+allowing the observed variance to be decomposed to its biological and technical components.
+
+Using the technical noise of the control genes assumes that, at the very least, $\mbox{var}(y_{ig}|y_{ig}^*)$ is equal to $\mbox{var}(y_{is})$ for $g$ and $s$ at the same abundance.
+(There is no need to condition on $y_{is}^*$, as no biological variation exists within control genes.)
+The quality of the approximation in Equation~\ref{eqn:techest} also depends on how $\mbox{var}(y_{ig}|y_{ig}^*)$ changes as a function of $y^*_{ig}$.
+If the value does not change, the expression is exact; however, this unlikely to be the case as the sampling noise for counts will depend on the mean.
+The approximation becomes less accurate with strong changes with respect to $y_{ig}^*$ and high variance of $y_{ig}^*$.
+Nonetheless, this approach is still a useful approximation for modelling technical noise.
+
+Finally, to detect highly variable genes, our null hypothesis is that all endogenous genes have variance estimates that are distributed according to Equation~\ref{eqn:estdist}.
+Highly variable genes are detected by rejecting this null hypothesis with a one-sided $F$-test.
+For an endogenous gene $g$, we compute
+\[
+    F_g = \frac{\hat\sigma^2_g}{V(A_g)} \;.
+\]
+The $p$-value for this gene is defined as the upper tail probability at $F_g$ for an $F$-distribution with $n-p$ and $d_0$ degrees of freedom.
+
+\section{Further comments}
+
+\subsection{Comparison to the Brennecke method}
+Our method uses the normalized log-expression values as $y_{ig}$, whereas the Brennecke method operates on the CV$^2$ values calculated from the (normalized) counts.
+The two methods are similar in terms of the number of HVGs detected in a variety of simulation scenarios (see \texttt{simulations/hvg} for examples).
+The main difference is that our method returns fewer false positives, possibly because (i) log-expression values are more normal-looking, and (ii) we account for variability of the true variances around the mean-variance trend.
+From a practical perspective, we favour log-values as this improves consistency with downstream procedures.
+Dimensionality reduction, clustering and visualization are all applied on the log-expression values.
+Indeed, the variance of the log-values provides a direct measure of the log-fold change between cells, which is arguably more relevant than the absolute differences in expression.
+
+\subsection{Filtering out low-abundance genes}
+At very low abundances, counts are limited to values of 0 or 1.
+This means that the log-expression values effectively follow a scaled binomial distribution, for which the relationship between the sample mean and variance estimate is exact.
+In other words, all low-abundance genes lie exactly on the empirical mean-variance trend with no scatter.
+When fitting $V(.)$, this understates the variance around the trend and leads to overestimation of $d_0$ for all other genes.
+The preponderance of low-abundance genes also interferes with span-based loess smoothing at higher abundances.
+For hypothesis testing, these low-abundance genes will never achieve large $F_g$ and thus will not be detected.
+Filtering of these genes should be performed prior to further analysis. 
+The simulations in \texttt{simulations/hvg} indicate that a threshold of 0.1 on the $\log_2(y_{ig}+1)$ mean should be used.
+Below this threshold, discreteness in the variance estimates begins to dominate.
+
+\bibliography{ref}
+\bibliographystyle{plainnat}
+
+\end{document}
