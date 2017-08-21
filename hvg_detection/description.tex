@@ -149,11 +149,10 @@ We can simply obtain an estimate of the biological component as
 \]
 allowing the observed variance to be decomposed to its biological and technical components.
 
-Using the technical noise of the control genes assumes that, at the very least, $\mbox{var}(y_{ig}|y_{ig}^*)$ is equal to $\mbox{var}(y_{is})$ for $g$ and $s$ at the same abundance.
-(There is no need to condition on $y_{is}^*$, as no biological variation exists within control genes.)
+Using the variance of the control genes assumes that, at the very least, $\mbox{var}(y_{ig}|y_{ig}^*) = \mbox{var}(y_{is})$ when $E(y_{is}) = y_{ig}^*$, i.e., the sampling noise is the same for control and endogenous genes at the same expression level.
 The quality of the approximation in Equation~\ref{eqn:techest} also depends on how $\mbox{var}(y_{ig}|y_{ig}^*)$ changes as a function of $y^*_{ig}$.
-If the value does not change, the expression is exact; however, this unlikely to be the case as the sampling noise for counts will depend on the mean.
-The approximation becomes less accurate with strong changes with respect to $y_{ig}^*$ and high variance of $y_{ig}^*$.
+If it does not change, the expression is exact; however, this unlikely to be the case as the sampling noise for counts will depend on the mean.
+The approximation is less likely to be accurate if there are strong changes with respect to $y_{ig}^*$ \textit{and} the variance of $y_{ig}^*$ across cells is high.
 Nonetheless, this approach is still a useful approximation for modelling technical noise.
 
 Finally, to detect highly variable genes, our null hypothesis is that all endogenous genes have variance estimates that are distributed according to Equation~\ref{eqn:estdist}.
