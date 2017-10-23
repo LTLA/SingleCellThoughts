@@ -78,6 +78,7 @@ whereas larger values will retain more technical noise than is necessary.
 We only use genes with positive $\hat\sigma^2_{(b)g}$ it guarantees that the total variance is greater than $T$.
 This ensures that there is some value of $k^* \in [1, K]$ that will satisfy Inequality~\ref{eqn:pcachoice}.
 It also reduces random noise that can skew the loading vectors for the first PCs if the biological signal is weak.
+However, it likely will result in some overestimation of the biological noise and of $k^*$.
 
 \section*{Further comments}
 Our approach performs well in the simulations in \texttt{simulations/pca}.
@@ -97,5 +98,21 @@ There are, however, some caveats with the performance of the method:
         This is because they are not constrained to be parallel to the biological subspace, and are free to capture the maximum amount of variance due to technical noise.
         In practice, this results in overestimation of $k^*$, which reduces the efficiency with which technical noise is removed.
 \end{itemize}
+
+It is difficult to apply this approach exactly in multi-batch experiments where the technical noise must be modelled separately in each batch.
+This may be because a different set of spike-ins were added, or the same spike-in set was used at a different concentration.
+It may not be possible to obtain a single trend for the technical noise in the combined data, especially as batch correction usually only adjusts the mean and not the variance.
+Nonetheless, it is still possible to use our approach to determine, roughly, the number of PCs to retain in the combined data set.
+We determine the number of PCs to retain in each batch, and we take the average across batches as the number of PCs to retain in the combined data set.
+Here, we assume that batches share the biological subspace, so the loading vectors are similar across batches.
+Obviously, this is not exact but it provides a rough guideline for distinguishing between technical and biological noise.
+
+% One can be fairly sanguine about this; feature selection for data exploration doesn't require a great deal of stringency.
+% As long as we can get a rough idea of what is "sensible", that is good enough.
+% Sure, we might toss out some biology at the later PCs, but the results will be dominated by the earlier PCs anyway.
+% Moreover, using all PCs will leave in a lot of technical noise that runs the risk of obscuring subtle biological effects.
+%
+% One alternative is to do the PCA, obtain a low-rank approximation and use that for batch correction.
+% However, I'm not sure about doing so in case the low-rank approximation discards some biology and results in spurious differences between batches.
 
 \end{document}
