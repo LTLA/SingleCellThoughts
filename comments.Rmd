@@ -1,0 +1,866 @@
+# Read alignment comments
+
+## What to do about duplicate removal
+
+Obviously, UMI counts already have duplicates removed, but what about read count-based methods?
+It probably doesn't make much difference for SMART-seq2 and friends performing whole-transcript amplification.
+This is because reads at different positions could be derived from amplified copies of the same transcript.
+Duplicate removal based on genomic position only protects against PCR duplicates during library preparation.
+See https://doi.org/10.1038/srep25533 for further details.
+
+## Sparse matrices for high dropout data
+
+This is immediately appealing as it could save a lot of space.
+The problem is that corrected data will not be sparse.
+The log-transformation can be sparse if the pseudo-count is 1, but if batch correction needs to be performed, that's no longer possible.
+In any case, PCA in its true form doesn't work for sparse matrices because you need to centre (though if you only use HVGs, that should be few enough to densify).
+
+# Quality control comments
+
+## Improving resolution with log-transformed QC metrics
+
+By improving resolution, I refer to compression of high values and expansion of the range of low values.
+The former reduces the MAD relative to the median, such that "3 MADs away" is a sensible statistic.
+The latter makes it easier to distinguish between outliers and the edge of the distribution of acceptable values.
+Or, from another perspective, the large MAD that is driven by greater variability at high values isn't relevant to the threshold choice at low values when working on the raw scale.
+By transforming to the log scale, the variance is stabilised across the real line.
+
+On a more conceptual note, the MAD is necessary to account for genuine biological heterogeneity in these metrics.
+That's why we don't use a hard-and-fast fold-change threshold from the median, as this would be too aggressive or not aggressive enough in some situations.
+
+## Interpreting the proportion mapped to spike-ins
+
+It shouldn't matter too much if it's the proportion against total counts, or proportion against endogenous counts.
+This is because we're not measuring an increase in mitochondrial/spike-in counts, but rather, a depletion of endogenous RNA.
+If endogenous RNA decreases in low-quality cells, the mitochondrial/spike-in proportions against the total count should both increase.
+We don't have to worry about effects of e.g. an increase in mitochondrial counts affecting the proportion of spike-in counts.
+
+The absolute value of the spike-in proportion can also be used for QC.
+You would want about 5-10% of the reads going to the spike-ins.
+If this is not the case, it suggests that you need to alter the dilution.
+You can also compare the observed proportions to the expected values, which can be calculated if RNA quantification was done on the cells beforehand.
+Neither of these approaches provide a threshold for filtering, but they do tell you if the experiment went well or not.
+
+Also, we don't use the logit transform for the proportions, even though on the raw scale we could theoretically end up with a above-unity threshold.
+This is because the logit transform compresses changes within the middle of the [0,1] range.
+This reduces the resolution for where the threshold would usually be.
+
+## Assumptions of outlier identification
+
+### Independence between QC metrics and biology
+
+There's an implicit assumption that these technical metrics are homogeneous across cell subtypes and states.
+This ensures that outliers are not driven by biological differences and must represent aberrant libraries.
+However, this assumption won't be true for extreme cases like erythrocytes, where the "outliers" would just be a genuine biological clustering.
+In such cases, cell types might be incorrectly removed, which would be unfortunate.
+Some heterogeneity is tolerated provided that the inter-state variance of the metric is smaller than the intra-state variance.
+
+I'm not sure there's a good automatic way to distinguish between low quality cells and those from a different cell type when heterogeneous QC metrics are observed.
+You might think to use the expression of endogenous genes to gauge whether the QC-outliers form a cluster and thus might be a genuine cell type.
+However, the point is that poor quality affects the observed expression in ways that are difficult to normalize [@ilicic2016classification].
+It would not be easy to tell whether a cluster was due to genuine biological separation or due to technical differences in quality.
+In the most obvious case, all the empty wells might cluster together, even though this is clearly not a cell type.
+
+If the assumption above is violated, the only solution is to set some hard absolute threshold.
+This only removes cells that are "absolutely" poor for further work (normalization, etc.) while giving those that are "relatively" poor the benefit of the doubt.
+However, this requires a _lot_ of context and/or experience to get right.
+Identifying outliers directly from the endogenous genes is also not ideal, as this would just eliminate rare subpopulations and understate cellular heterogeneity.
+
+### Batch-by-batch quality control
+
+Systematic differences in QC metrics can be handled to some extent using the `batch` argument in the `isOutlier` function.
+This is obviously useful for batch effects caused by known differences in experimental processing, e.g., sequencing at different depth or had different amounts of spike-in added.
+It may also be useful if an _a priori_ cell type has systematically fewer expressed genes or lower RNA content.
+Analyzing all cell types together would inflate the MAD and compromise QC at best, or lead to the entire loss of one cell type at worst.
+
+In general, it seems better to block on more factors rather than fewer, to avoid MAD inflation and improve outlier identification.
+The risk is that you'll lose more cells within each batch because the MAD is smaller, such that an uncommon subset of (high-quality) cells end up being removed.
+However, you should never expect to encounter this situation under the homogeneity assumption.
+If that assumption fails, then the concept of low-quality cells being outliers is inherently invalid.
+
+## Cell filtering before gene filtering
+
+It is intuitively logical to remove low-quality cells before computing the average counts and performing gene filtering.
+Otherwise, the averages would be distorted by empty cells or cells with 100% spike-ins.
+However, one _could_ argue that some cells become low quality after filtering on the genes.
+In particular, cells might drop below the "number of expressed features" threshold after some genes are removed.
+This would indicate a need for repeated cycles of filtering on cells and genes, which would be rather laborious.
+
+In practice, this is unlikely to be a problem.
+Removal of an inordinate number of expressed features in some cells relative to other cells would only occur due to DE genes.
+If most genes are not DE, they should be filtered at an equal rate for all cells.
+This suggests that filtering is unlikely to cause cells to suddenly become outliers with respect to the number of expressed features.
+Most cells surviving the initial round of QC are also likely to have diverse transcriptomes, so the total count should not suddenly drop either.
+(In any case, genes that are dominating the sequencing output of a cell would probably not get filtered.)
+
+# Cell cycle classification comments
+
+## Explaining poor performance on the brain data set
+
+The main reason for poor performance is probably because the training data is different from the test data.
+Consider the classifier trained on gene count data for one short gene A and one long gene B.
+In G1, B is silent and A is strongly expressed, while in all other phases, B's expression is non-zero (lower molarity than A, but higher CPM due to length).
+In read count data, this gene pair would be selected as A > B in G1 and B > A in all other phases.
+However, in UMI data, this gene pair would not be informative as A > B in terms of molecule counts in all phases.
+I use gene length as an example here but similar effects are observed with mappability, sequenceability, etc.
+
+Another possible contributor to poor performance is the difference in the cells used for training and those in the test data.
+If certain expression patterns are associated with the cell cycle in the training set (of mouse embryonic stem cells), these may be incorporated into the classifier.
+However, if those patterns are not associated with the cell cycle in the test data, their inclusion will add noise without providing any phase information.
+This will lead to a deterioration in the accuracy of the classifier.
+In general, this is unlikely to be a major issue as the cell cycle should be a conserved process across many lineages and conditions.
+
+Furthermore, there may be misclassification due to a large number of cells being in G0.
+In theory, these should be closest to G1 but they may be different enough that you'd get a low G1 score, making them show up as S-like or even G2M.
+
+# Filtering comments
+
+## Justification in the context of HVG detection
+
+It could be argued that you don't need to do filtering on abundance if you're going to select on HVGs anyway.
+This is because the HVG screen would throw out low-abundance genes, so you might as well skip the abundance filter.
+The disadvantage is if the HVG screen depends on significance, in which case the low abundances would increase the severity of the MTC.
+This could be mild (~20% increase in the p-value) or quite severe (2-3-fold), depending on how many annotated genes are retained.
+The worst case occurs if you had mild contamination so that every gene had a count of one - you'd retain too many uninteresting genes if you just filtered on non-zero totals.
+See https://github.com/miscellaneousCode/filtering2017/justification.Rmd for a more detailed discussion.
+
+## Justification on other grounds
+
+Genes with low counts may be due to transcriptional leakage, mapping/sequencing errors (especially pseudogenes) or contamination.
+This makes them uninteresting as they're unlikely to be related to any genuine biology.
+Of course, there are probably a few low-abundance genes that (a) are important and (b) vary noticeably across cells.
+However, this is probably the exception rather than the rule; getting hit by the MTC and other statistical problems to squeeze these genes out is suboptimal.
+Genes that are low-abundance due to being expressed in rare populations are best handled with iterative clustering.
+
+Note that this reasoning has nothing to do with the rectangular component on the plot.
+That component just represents the bunch of genes with near-zero expression, as the log-transform spreads them out across a larger range for greater resolution. 
+Thus, if you want to get rid of low-abundance genes, you should be setting your filter threshold somewhere within this component.
+Otherwise, if it's too high, you might end up removing the bulk of moderately-expressed genes.
+The rectangular component also represents the lower-density part of the (log-)abundance interval, which reduces the senstivity of the analysis to the threshold choice.
+Minor changes in the threshold will not retain/remove as many genes as one would have if the threshold was set in the moderate-to-high-abundance peak.
+
+Filtering also protects the normalization machinery from low-abundance genes (see https://github.com/miscellaneousCode/filtering2017/justification.Rmd for details).
+Most ratio-based normalization methods will be messed up by low counts, because the count:mean ratios for low-abundance genes will be more variable (CV^2^ is higher).
+Many methods also use a robust average like the median to approximate the mean count.
+The median of the count:mean ratio should thus be near the true size factor, but this is only accurate for NB distributions with large means.
+It could also be argued that you should do the analysis using only the genes used for normalization, lest there be other biases in the filtered genes.
+
+## Why use `calcAverage`?
+
+The mean can be calculated from the raw counts, or after adjustment for library size.
+The latter seems to be more precise as it avoids domination of the calculation by large cells, i.e., the amount of information contributed by each cell is more similar.
+An obvious question, though, is why we use the library size instead of the size factor.
+This is mainly a chicken-and-egg problem, because we need to filter before we normalize.
+
+## Saving the original data
+
+It's also good practice to save the full data set before filtering.
+This is because the filtered genes in one context (e.g., for the full data set) might not be of the greatest interest in another context (e.g., with a subset of the data).
+A prime example would be in iterative clustering, or when looking at subgroups.
+In such cases, it's useful to filter and process everything afresh for each cluster or subgroup.
+
+Of course, you could argue that you'd avoid these problems by not filtering at all.
+Instead, you could use the selected subset of genes in each step via `subset.row`.
+This is possible but it is tedious to specify (and easy to forget!) when you have the same or similar set of genes passing through each step of the workflow.
+Obviously, not doing any filtering or selection would be troublesome, e.g., when low-count genes get standardized to large variances in PCA.
+
+# Normalization comments
+
+## Motivation for not using non-linear normalization
+
+There are probably some non-linear biases in scRNA-seq data, i.e., beyond global scaling.
+However, these are a pain to deal with because it's hard to fit a robust trend with respect to abundance.
+Most robust methods (e.g., loess) rely on normality, and log-transforming counts becomes highly dependent on the pseudo-count at low counts.
+Conversely, we could use discrete GLMs but that depends on proper specification of dispersions and is also less robust to outliers.
+
+Another problem is that non-linear normalization assumes that most genes at each point of the covariate range are not DE.
+This is reasonable in bulk data, but might not hold at the single-cell level.
+Cell-to-cell heterogeneity and intra-cell correlations means that it is entirely possible that we get large-scale shifts in highly expressed genes.
+For example, a subpopulation may upregulate a set of genes, resulting in a skew in a particular abundance category.
+This would be eliminated upon normalization, which would not be ideal.
+
+Finally, the non-linear effects seem relatively minor compared to other things, e.g., between-cell variability, plate effects.
+Variance in the size factors due to non-linearity in the HSC data set is an order of magnitude smaller than variance in the size factors themselves.
+It's probably worse between batches, but then you should be blocking on batch anyway.
+The worst is likely observed DE analyses that are overpowered due to the large number of cells, but that has other problems...
+
+```{r}
+library(scran)
+sce <- readRDS("hsc_data.rds")
+ab <- calcAverage(sce)
+bottom <- ab < median(ab)
+summary(ab[bottom])
+summary(ab[!bottom])
+sf.low <- computeSumFactors(sce, subset.row=bottom, sizes=c(20, 40, 60, 80), sf.out=TRUE)
+sf.hi <- computeSumFactors(sce, subset.row=!bottom, sizes=c(20, 40, 60, 80), sf.out=TRUE)
+var(log10(sf.hi)) # 0.0161
+var(log10(sf.hi/sf.low)) # 0.0013
+
+sce2 <- readRDS("brain_data.rds")
+clusters <- quickCluster(sce2)
+ab2 <- calcAverage(sce2)
+bottom2 <- ab2 < quantile(ab2, 0.75)
+summary(ab2[bottom2])
+summary(ab2[!bottom2])
+sf.low2 <- computeSumFactors(sce2, subset.row=bottom2, cluster=clusters, sf.out=TRUE)
+sf.hi2 <- computeSumFactors(sce2, subset.row=!bottom2, cluster=clusters, sf.out=TRUE)
+var(log10(sf.hi2)) # 0.0941
+var(log10(sf.hi2/sf.low2)) # 0.0082
+
+# In comparison, the difference between size factors and library sizes
+# still explains a fairly large proportion of the size factor variability.
+var(log10(sizeFactors(sce2)/colSums(counts(sce2)))) # 0.0300
+var(log10(colSums(counts(sce)))) # 0.0369
+var(log10(sizeFactors(sce2))) # 0.1039
+# Obviously doesn't happen in the HSC data, which is too homogeneous to care.
+```
+
+Note that library size normalization is usually sufficient for purposes of cell type identification.
+Separation of cell types is robust as the presence of differences in the expression profile is not affected by the scaling factor.
+However, the interpretation of these differences is sensitive to the choice of normalization strategy.
+For example, depending on whether you use spike-in or non-DE normalization, you can flip the sign of the log-fold changes.
+This could completely alter your determination of what the clusters actually represents.
+
+## Should we standardize the log-counts?
+
+Should we standardize the log-expression values?
+This ensures that all genes contribute the same amount of variance, thereby eliminating the mean-variance relationship.
+Genes in the middle of the range with high technical variance will not dominate the variance of the data set.
+However, there are several drawbacks:
+
+- Standardizing would downweight interesting genes with large total variances due to the biological component.
+This could conceivably reduce the resolution of biological differences between cells, especially if technical noise gets upweighted.
+Conversely, lowly variable genes would end up having disproportionate impact as they get scaled up.
+This is of greater concern than the dominance of HVGs in unscaled data, as there are a lot more lowly variable genes than HVGs.
+- An alternative strategy is to scale the log-expression values so that all genes have the same technical component.
+This avoids the loss of resolution associated with downweighting of HVGs, by focusing only on the technical component.
+However, it implicitly upweights genes with low technical noise and small (non-zero) biological components.
+As a result, the scaled values might be dominated by biological variability that was originally minor.
+- Any scaling would distort the true log-fold changes for genes between subpopulations, which has implications when using the transformed values for DE analyses.
+It also affects interpretation of relative distances between three or more groups of cells, e.g., are two groups more related than a third group?
+
+Scaling of the technical components will eliminate the mean-variance relationship most efficiently.
+This ensures that the distribution of variances of non-HVGs will be the same across abundances, but will distort the biological component for HVGs.
+A better and simpler approach is to enriched for biological signal by only using HVGs in clustering, dimensionality reduction, etc.
+
+## Pre-clustering parameter choices
+
+We filter before we pre-cluster to ensure that we have the same set of genes being used in `quickCluster` and `computeSumFactors`.
+This ensures that we focus on separating cells by the DE genes (or lack thereof) in the set of genes to be used for normalization.
+There's no need to worry about DE genes in the low-abundance genes... because we've filtered them out already!
+Obviously, filtering out low-abundance genes will discard some reoslution of biological structure.
+This is tolerable as the point of pre-clustering is to reduce DE genes rather than to identify subpopulations.
+
+## Dealing with dropouts 
+
+Differences in dropout rates between cells should not affect scaling normalization.
+This is because scaling normalization concerns itself with systematic (technical) differences in the expected expression between cells.
+Whether such differences occur in the zero or non-zero components is irrelevant to the computed size factors. 
+The distribution of expression only matters insofar as the robust average estimators are accurate.
+
+## Additional normalization for confounding effects
+
+The percentage of variance explained by an uninteresting technical effect has obvious effects on HVG detection.
+However, it also affects the correlation between genes because it represents some common underlying factor.
+For a factor with increasing percentage explained 'p', Pearson's correlation will increase to 1, e.g., by 'p' at a true correlation of zero.
+(This is based on adding Normal variates to each other, with one part representing the true expression of each gene and the other representing the common factor.
+These two components are independent of each other within each gene -- you can then decompose the covariance between genes to get the correlation-proportion relationship.)
+
+If 'p' is decently large (>10%), we're likely to have problems, so the corresponding factor will be need to be regressed out.
+Of course, blocking on factors introduces more assumptions and points of failure to the analysis (e.g., linearity in the covariates).
+If the model is misspecified, you can end up with spurious patterns in the residuals - possibly larger than that caused by the technical bias in the first place.
+This is compounded by the presence of zeroes, non-normality and heteroskedasticity, etc. when you use linear models.
+Thus, blocking should be performed sparingly, rather than by default.
+
+In fact, separating the data into batches, running analyses on each batch and combining them may be safer if the batches are likely to be very different.
+This avoids the misapplication of normalization assumptions in `removeBatchEffect` to these data.
+This approach is illustrated in the HVG detection section for the brain data, and is done by default for one-way layouts in `correlatePairs`.
+
+## Misspecifying the model when running `removeBatchEffect`
+
+Comparing residuals between blocking factor levels can run into problems if population structure varies between levels.
+Imagine a case where we have two batches, NO batch effect and different proportions of the same cell types in each batch.
+Computing residuals can result in spurious differences within each cell type for genes that are DE between cell types.
+This is because the batch-specific average will be different due to the different composition of each batch.
+It's actually worse than a completely confounding effect, as at least total confounding would just result in loss of differences and a false negative.
+
+This seems to only affect situations where residuals need to compared across levels.
+For variance calculations, residual effects are evaluated in terms of their total size, so this is less of an issue.
+In fact, the whole point is to pick up highly variable genes that aren't captured well by the model, so this is a good thing.
+For correlations with one-way layouts, comparisons are done within each level so it should be fine.
+There are problems for additive designs, but we knew that already.
+
+With all that being said, correction is probably the lesser of two evils if you have a strong batch effect that compromises the visualization.
+It shouldn't matter for technical effects that are largely orthogonal to population structure (e.g., balanced designs).
+Problems would only occur when you try to regress out uninteresting biological effects that might have some composition differences.
+
+# HVG detection comments
+
+## Trend fitting to variances of the log-counts
+
+The mean-variance trend for log-expression values is more complex and difficult to fit than that of other approaches.
+But we can do it, so it's a technical challenge rather than a philosophical one.
+The cause of the _shape_ of the trend is somewhat interesting:
+
+- At an abundance of zero, the variance must be zero, which is why you start from the origin.
+- As abundances increase, the variance also increases as you get more non-zero observations in each cell.
+This is primarily driven by the difference between zero and non-zero values (not so much the size of the non-zero values at low abundances, especially with a log-transformation).
+If you model this as a scaled Bernoulli RV with low `p`, you'll see a linear increase with the mean with increasing `p`.
+- As abundances increase further, the variance stops increasing and instead starts to decrease towards a near-zero plateau.
+One can model a high-abundance gene by summing RVs for lower-abundance genes, e.g., if you were to pool the transcript molecules of the latter.
+It is easy to see that the CV^2^ will drop for the summed RV - this implies that the relative differences decrease, so the log-variance would also drop.
+- On a side note, the variance will increase as a convex quadratic with the mean, if variance is driven by an outlier and everything else is 0.
+
+I'm not sure how much effort it's worth to extract HVG information from the left side of the plot, as low counts are dominated by Poisson sampling noise.
+
+## Motivating the threshold for significance
+
+For a standard normal, the square root of the expected squared distance between two cells would be sqrt(2). 
+If you set the standard error to 1/sqrt(2), the distance would become 1 (i.e., 2-fold change).
+Setting this threshold avoids selecting genes with high fold changes above the technical variance, but small absolute total variances.
+Such genes are more likely to be true positives but also less likely to be strongly variable and biologically interesting.
+
+The threshold on the biological omponent avoids selecting many genes with minor increases in variability that won't contribute to downstream analyses.
+This is particularly pertinent for UMIs where everything is generally above the trend; without a threshold, all genes may end up being selected.
+This threshold is a bit informal by itself, but that's okay - the DM, for example, is no better, and Brennecke has that +0.25 value that isn't very interpretable.
+We also complement the threshold with proper hypothesis testing to avoid detecting lots of spurious HVGs due to estimation error.
+
+Now, one may argue that HVGs are not of interest in themselves, but are only of use for downstream analyses.
+This would suggest that using the component threshold alone or taking the top X genes with the highest variance would be sufficient.
+Even so, controlling the FDR is important to reduce the number of non-HVGs that get selected in the feature set.
+This reduces technical noise in downstream processes and improves reproducibility in feature selection.
+Rigorous testing also provides a fall-back result to verify high-level analyses, e.g., clustering.
+
+It is also permissible to relax the FDR for detecting HVGs, especially if you didn't get anything interesting things with a low threshold.
+Of course, this would also increase the amount of genes dominated by technical noise later on, so it's not preferable if you can avoid it.
+One could argue that this is not problematic if you just get more low-variability genes, as these don't contribute much to relative differences betwen cells.
+However, technical noise is still high (in absolute terms) and there are a lot more of them, so it would probably still mess up the results.
+
+In any case, the p-values calculated here are probably more appropriate than those from Brennecke.
+Log-expression values are a lot more normal-looking than the raw counts, due to the skew of the latter.
+
+## Pros and cons of using log-count variances over CV^2^
+
+Log-count variances are more consistent with downstream applications.
+For example, PCA and t-SNE are applied on the log-values, as is visualization of expression with boxplots or violin plots.
+Making the latter with genes identified as HVGs from CV2 would give outliers that get shrunk upon log-transformation.
+Indeed, the variance of the log-values provides a measure of the log-fold change between cells, which is arguably more relevant than the absolute differences in expression.
+
+As mentioned, the CV^2^ is sensitive to high outlier expression in few cells, which are difficult to trust.
+This can be due to technical reasons, e.g., due to variable capture/amplification noise for that gene or low-quality cells that slip through QC.
+This may also be biological but uninteresting, e.g., due to transcriptional bursting whereby one cell has a lot more than others at that point in time.
+In any case, this can be a pain for downstream analyses as the HVG list isn't easily interpretable if you have to manually weed out a lot of uninteresting genes.
+It can also interfere with identification of trajectories and clustering if a lot of irrelevant outliers are picked up and used.
+
+On the other hand, as a result of the robustness to outliers, detection power of the log-based method is reduced for HVGs driven by rare subpopulations.
+It is difficult to detect these with the log-based method, given that uniquely expressed genes with a near-infinite fold-change are already hard to pick up. 
+CV^2^-based methods do better, though they are also less effective at detecting HVGs for subpopulations characterised by a loss of expression.
+This is probably because the mean is already large, which limits the scale of the change in the CV^2^.
+(The point at which rare populations cease to be outliers is very blurry, though, and requires orthogonal techniques to validate.
+Increasing the number of cells demonstrates reproducibility but not relevance if the outlier generation rate is the same.)
+
+In short, the final recommendation is to use the log-based methods for initial exploration, because it's better at recovering major features in the data.
+You can then switch to `technicalCV2` when pulling out rare subpopulations.
+Check out https://github.com/MarioniLab/MiscellaneousCode/tree/master/HVG2017 for simulation details used to get to the conclusions above.
+
+## Biological interpretion of HVGs
+
+We can interpret HVGs as genes where each cell has an (unknown) true expression that varies across cells, e.g., due to subpopulations or across a continuum.
+This can also be extended across time, e.g., due to transcriptional bursting or circadian rhythms.
+In other words, HVGs are equivalent to DE genes for unknown subsets of cells.
+Validating whether the variability is functionally relevant becomes straightforward, as we can just KO or overexpress the gene.
+This is equivalent to the strategy that would be used to validate the underlying DE, if the subsets were known.
+One can also see this as seeing what happens after reducing the variance by coercing everyone to be lowly or highly-expressing.
+While it won't preserve the population mean, this is largely irrelevant if HVGs are to equivalent to DEGs anyway.
+(Such a task -- reducing variability while preserving the mean -- would be monumentally difficult.)
+
+## Reasoning behind iterative HVG and clustering
+
+The set of HVGs detected within a cluster may be more relevant.
+This is because you can detect HVGs at greater power if you didn't have uninvolved, constantly-expressing cells dragging down the variance/correlations.
+Similarly, you'd get rid of genes that are HVGs between clusters but are not within the cluster, which wouldn't help with internal clustering.
+
+## Why spike-ins are detected as HVGs
+
+A few spike-ins are detected as being highly variable, despite the fact that they should not exhibit any variability at all.
+This seems to be caused by cell- and spike-specific amplification biases that introduce additional variability for a few spike-in transcripts.
+(For example, if a transcript is hard to capture consistently but easy to amplify, it'll get a large mean and large variability.)
+As a result, the total variance is increased above the technical trend, mimicking the effect of biological variance.
+I think it's due to PCR because the fluctuations are less pronounced for UMI data.
+
+```{r}
+sce <- readRDS("hsc_data.rds")
+out <- technicalCV2(sce, min.bio.disp=0)
+out["ERCC-00108",]
+plot(out$mean, out$cv2, log="xy", col=ifelse(out$FDR <= 0.05, "black", "grey"), pch=16)
+points(out$mean, out$cv2, col="red", cex=ifelse(is.na(out$FDR), 1, 0), pch=16)
+
+fit <- trendVar(sce, trend="semiloess", span=0.2, start=list(a=2, b=2, n=5))
+dec <- decomposeVar(sce, fit)
+dec["ERCC-00108",]
+plot(dec$mean, dec$total, col=ifelse(dec$FDR <= 0.05, "black", "grey"), pch=16)
+curve(fit$trend(x), col="blue", add=TRUE)
+points(dec$mean, dec$total,  col="red", cex=ifelse(is.na(out$FDR), 1, 0), pch=16)
+```
+
+This affects all HVG detection methods, and it's unlikely that we can do much computationally to correct it, given that it's indistinguishable from genuine biological variance.
+The CV^2^ method is more robust with the default `min.bio.disp`, which scales up the null CV^2^ to mitigate detection of spike-ins.
+The 0.5 threshold for the log-based method is less protective, because the absolute biological component for the spike-ins is quite large.
+
+The solution would be to model the spread around the trend with an F-distribution, which is what `test="f"` does in `testVar`.
+This assumes that the true technical variance for each gene is sampled from an inverse chi-squared distribution, depending on the amount of amplification biases.
+In this manner, some protection is provided against the scatter around the trend.
+The question is whether there's enough spike-ins to do that precisely, and whether we can assume that the second d.f. is constant over all abundances.
+The answer to both questions is probably no, but it's better than nothing - at least there's no obvious defect from discreteness at low abundances that would warrant filtering. 
+
+```{r}
+set.seed(100)
+nspikes <- 100
+ncells <- 100
+spike.means <- 2^runif(nspikes, -2, 8)
+spike.disp <- (100/spike.means + 0.5) * 10/rchisq(nspikes, df=10)
+library(scran)
+library(limma)
+
+collected <- list()
+for (it in 1:100) {
+    spike.data <- matrix(rnbinom(nspikes*ncells, mu=spike.means, size=1/spike.disp), ncol=ncells)
+    
+    # Fitting the trend
+    exprs <- log2(spike.data/(colSums(spike.data)/mean(colSums(spike.data)))+1)
+    fit <- trendVar(exprs)
+    ab <- fit$mean
+
+    # Estimating the F-distribution
+    vals <- fit$var/fit$trend(fit$mean)
+    fit.all <- fitFDistRobustly(vals, df1=ncells-1)
+    fit.1   <- fitFDistRobustly(vals[ab > 1], df1=ncells-1)
+    fit.2   <- fitFDistRobustly(vals[ab > 2], df1=ncells-1)
+    fit.4   <- fitFDistRobustly(vals[ab > 4], df1=ncells-1)
+    collected[[it]] <- c(fit.all$df2, fit.1$df2, fit.2$df2, fit.4$df2)
+}
+summary(do.call(rbind, collected))
+```
+
+## Sampling distribution of the variance 
+
+The chi-squared assumption above considers normally-distributed observations, where larger values are less precise.
+However, the variance estimate for non-normal distributions could be large but more precise than expected, e.g., if there's a consistent number of zeros.
+You could get more power by bootstrapping to estimate the sampling distribution, though this is computationally inconvenient.
+
+In practice, it's probably not worth worrying about conservativeness from the sample distribution of the variance estimate.
+If this were a problem, the second d.f. would be infinity for the F-distribution (see above) as the sampling variance would be lower than expected under the chi-squared distribution.
+This is not the case in most data sets, which suggests that conservativeness is not the problem here.
+(Or even if it was, and the first d.f. was effectively underestimated under non-normality, `fitFDistRobustly` would compensate by increasing the second d.f.
+This only works to a point, though, because if the second d.f. is already large, further increases will converge to the chi-squared boundary.)
+
+# Correlation comments
+
+## Using HVGs as a pre-screen
+
+Obviously, if you don't pre-screen, you'll get a whole lot of genes that are driven by technical noise.
+This should be random and reduce the correlations (and power) -- or, if not random, then definitely uninteresting.
+
+An alternative analytical approach would be a method that detects correlations and HVGs at the same time, where strong correlations would offset low variances for gene detection.
+The problem is that, taken to its logical conclusion, this would probably pick up a large web of genes that have strong correlations with low total variances.
+This is probably uninteresting, e.g., residual technical effects (like cell size) or uninteresting biology (ribosome-related correlations).
+
+## How to use the correlation results
+
+The idea is to use the correlated gene pairs without having to rely on clustering.
+This is closer to the raw data and avoids the errors and ambiguities introduced by clustering.
+Negative correlations are particularly powerful as they provide definitive signals for both opposing clusters (or both ends of a trajectory).
+This gets around problems in validation where double positive/negative signals might just be due to differences in cell accessibility, permeability, etc.
+
+Of course, relying solely on correlations is also a bit less interpretable, as the identities of the cells in the subpopulations are not explicitly set.
+It is also limited to the top set of HVGs, whereas DE between clusters can be checked between all genes.
+(Although the rest of the genes are unlikely to have strong DE, otherwise they would have been HVGs.)
+Nonetheless, using correlated genes should enrich for structure and reduce the amount of noise going into clustering and dimensionality reduction.
+
+At the very least, one can use the correlation results to back up the (less reliable but more interpretable) higher-level analyses.
+So if you get a result from the latter that you mightn't trust (due to uncertainty of clustering, etc.), you can fall back to the correlations if it shows up there.
+
+## Setting an absolute value on the correlation
+
+We could also set a threshold on the absolute value of the correlation.
+This is useful when you have lots of cells, which gives you (too much) power to detect non-zero correlations.
+It is also valid without further work -- unlike log-fold changes in DE, the absolute correlation here directly determines the p-value.
+Thus, you can threshold on the correlation without affecting FDR control, because loss of elements with higher p-values just means the FDR is lower across the rest.
+However, I'm disinclined to recommend this explicitly, as you would lose power to detect subtle correlations driving minor subpopulations.
+This would defeat the purpose of having lots of cells to improve power to detect those subpopulations.
+
+## Using all HVGs in the brain data set
+
+I also switched to using all HVGs, rather than the top 500 as published.
+This is because if you have lots of heterogeneity, genes corresponding to relatively weaker effects are not visible if they get excluded from the top 500.
+This occurs even if those effects are actually absolutely large, leading to the inability to detect obvious substructure.
+In any case, it actually doesn't take that long, so we might as well just do it using all genes.
+
+## Statistical issues with testing
+
+There are issues with exchangeability - a count in a small cell can't really be swapped with a count in a large cell.
+This results in some liberalness in the permutation p-value - see https://github.com/MarioniLab/MiscellaneousCode/tree/master/HVG2017 for details.
+There are also problems when design matrices other than one-way layouts are used.
+Non-parametric modelling is no longer possible in such cases, as the exact effect of each factor must be known;
+and misspecified models will result in spurious correlations.
+
+# Clustering comments
+
+## Choice of clustering method
+
+Ward's method seems to work well, but complete linkage would also probably do a good job here.
+The problem with method selection is that the "best" method depends on the unknown nature of the underlying data.
+Ward and complete linkage assume compact clusters, but this might not be the case, e.g., density-based methods would do better for irregular shapes.
+This might suggest that ensemble or consensus clustering would perform best.
+
+The issue is with the interpretability of whatever clusters crawl out at the end.
+If an assigment only occurs with a minority of methods, should it be discarded, even if those methods focus on particularly pertinent aspects of the data?
+This is likely to occur if you use substantially different clustering methods, given that the use of similar methods would defeat the purpose.
+Upon summarization, these minority assignments would be discarded and power would be lost relative to application of the minority methods by themselves.
+
+Rather, the main utility of a consensus method is that it tells you which clusters are the most robust with respect to variability from the choice of method.
+These clusters can be considered conservative as you need everyone to detect them, resulting in some loss of power.
+However, if you assume that each method is affected by noise in different ways, then the consensus clusters are effectively denoised, which is nice.
+
+## Choice of clustering parameters
+
+The age-old question - how many clusters?
+Maximizing the average silhouette width seems to work pretty well, as it protects against too few and too many clusters.
+This is better than the gap statistic in that it allows you to see the quality of the clusters at the same time.
+In particular, you can colour the silhouette by its own colour if positive, and by the colour of its neighbour if negative.
+This tells you where the "wrong" cells _should_ have been assigned to.
+Thus, a cluster is only well-separated if most its cells have positive width;
+_and_ if only a few cells in other clusters have negative widths and have the target cluster as a closest neighbour.
+
+Of course, it is difficult to assess how "right" or "wrong" the clustering is, especially in the context of data exploration.
+For example, with underclustering, one might group CD4^+^ and CD8^+^ T cells together in one cluster, and B cells in another cluster.
+This is not wrong _per se_ - suboptimal, perhaps, as you're not discovering all the heterogeneity, but not wrong.
+Conversely, with overclustering, you would just end up splitting a cluster into multiple smaller clusters.
+This complicates interpretation as some clusters are probably redundant with each other - but it's not wrong either, just results in some extra work during annotation.
+Indeed, the smaller clusters probably have some differences, so it just comes down to the resolution that you want to use.
+
+## Assessing the reliability of clustering
+
+I don't think bootstrapping on genes is appropriate here.
+Standard bootstrapping requires IID genes in order to generate bootstrap replicates of the original data.
+This is not the case, which makes it difficult to interpret the bootstrap probabilities on an absolute scale.
+Doing it correctly would require block resampling to account for correlations -- hence the difficulty.
+
+One idea is to bootstrap across cells in a similar vein to _fpc_.
+This generates a new replicate experiment that can be clustered in a similar fashion as done in the original data.
+The aim is to determine if there exists a similar cluster (in terms of marker genes) in the bootstrap replicate compared to the original data.
+If so, it indicates that the cluster can be reproducibly recovered across multiple experiments.
+
+(Note that I don't believe that _fpc_ does this correctly.
+It bootstraps across cells, but computes the Jaccard index between clusters in the bootstrap replicate and that in the original data.
+This doesn't make sense in the context of bootstrap theory, where a bootstrap replicate is meant to be an independent data set.
+There is no concept of having the same cell in two replicate data sets.
+They may have the same expression profile, but they are different cells/draws from the underlying distribution.)
+
+## Using diffusion maps
+
+Pseudotime coordinates can be extracted for DE analyses with edgeR/DESeq, a la empirical clustering.
+This might be more robust than clustering for continuous trajectories where the cluster boundaries would be more or less arbitrary.
+Of course, this depends much on the quality of the trajectory reconstruction.
+
+## Visual artifacts in the heatmap
+
+Note that stripes, rather than blocks, are likely to be visual artifacts.
+This is because smaller cells have less stable expression and accumulate red/blue colours, while larger cells get more white.
+Obviously, if there are problems with normalization, it'll show up here as well.
+In general, these can be ignored; if they're not artifacts, then they'll be impossible to validate.
+
+## Using _limma_ instead of _edgeR_ to identify markers
+
+Much like in detecting HVGs, applying _limma_ on the log-transformed counts seems to do better than using _edgeR_ on the raw counts.
+This is because _edgeR_'s dispersion estimates are bounded by the grid search and can't fully account for the variability. 
+As a result, a few cells with large outlier expression end up driving the top DE calls.
+The log-transformation protects against outliers and seems to yield better rankings, at least for read count data where amplification biases are most prevalent.
+
+Interestingly, direct application of _limma_ seems to be better than `voom` for this purpose.
+`voom`'s precision weighting means that only a few cells with large size factors contribute to the DE analysis.
+This is because the mean-variance trend is sharply decreasing so a small number of large cells will get very large weights.
+As a result, DE genes with high variability across the majority of cells will be highly ranked, because that variability is ignored by the model.
+
+Technically, this is correct as we shouldn't trust variability due to dropouts and other technical noise.
+However, if we want to be conservative, then we look for genes that are expressed consistently _in spite of_ the dropouts.
+This favours DE genes in which we know that expression is consistent, at the expense of genes where we don't know either way due to dropouts/noise.
+To do this, we take the log-expression values at face value and just use _limma_ without weighting.
+
+More generally, it is just as valid to perform DE on the log-counts as it is on the counts.
+There's no reason to think that the comparison of arithmetic means is more meaningful than the comparison of (log-)geometric means.
+In any case, the two comparisons are equivalent when variances are low (or even if they're large and equal, under a second-order Taylor approximation).
+For large variances that differ between groups, the log-fold changes will differ but such genes are less likely to show up as strongly DE anyway.
+
+Note that the direct use of log-transformed counts doesn't work if you're comparing log-fold changes, e.g., for allele-specific expression.
+This is because the prior count shrinks log-fold changes towards zero at different rates depending on the abundance.
+Thus, you could get a significant difference in log-fold changes if the abundances are different, even if the true log-fold changes are the same.
+This is avoided with `voom` where the precision weights ensure that low abundances (most affected by the prior count) are not considered with much weight.
+
+# When to use spike-in normalization
+
+Changes in total RNA content that affect the entire transcriptome are probably functional in some sense, e.g., to support changes in cell size.
+Whether this is interesting or not depends on how easily it can be interpreted with respect to the biology of interest.
+For example, changes in content between different cell types cannot be easily associated with their phenotypic differences.
+(Identifying highly/lowly expressed genes adjusted by total RNA content would be more informative, thus requiring non-DE normalization.)
+In contrast, changes in content upon some stimulus can be directly interpreted as a response to the stimulus. 
+
+Consider a situation involving two groups of cells, where there is an increase in total RNA content in the second group.
+Assume that there is a subset of genes with a constant level of absolute expression in both groups.
+This will manifest as "downregulation" in the second group if total RNA content is normalized out.
+While this seems intuitively inappropriate, consider the following:
+
+- Cells in the second group had some reason for keeping this subset constant while every other gene was allowed to increase.
+This may indicate some specific repression applied to these genes to counter a global increase in activity, in which case downregulation is a suitable interpretation.
+- The constant subset may contain housekeeping genes (e.g., that just couldn't be more upregulated), which would almost definitely be false positives if reported as DE.
+However, if changes in total RNA content are not interesting, better to have a small subset of false positives than a whole transcriptome's worth of false positives.
+- Retaining the effects of total RNA content would just increase the amount of biological noise in the data, if it wasn't interesting.
+This is because different cells in the same functional population will naturally differ in their RNA content.
+
+Incidentally, a common counter to "solve" the problem of whether total RNA content is interesting or not is to normalize based on housekeeping genes.
+If the housekeepers do not change with total RNA content, then it's interesting; if they do, then it's not.
+However, a general housekeeping set is not easy to define for use in all experimental conditions (constitutive != constant).
+For example, GAPDH and B-actin are often used in qPCR but these are DE in activation, proliferation and differentiation (PMID: 12200519).
+Even with a small set, there's always the chance that the majority of its constituents are DE, which would break the normalization procedure.
+
+# Cell cycle phase correction comments
+
+An alternative approach uses genes that have annotated functions in cell cycling and division.
+We extract all genes associated with the relevant GO terms and use them to construct a PCA plot for the brain dataset.
+Figure ((braincyclepca)) contains three clusters that may correspond to distinct phases of the cell cycle.
+This can be determined explicitly by identifying marker genes for each cluster as previously described, and checking whether each marker has known phase-specific expression with resources such as [Cyclebase](http://www.cyclebase.org) [@santos2015cyclebase].
+
+```{r, echo=FALSE, results='hide', message=FALSE, eval=FALSE}
+library(org.Mm.eg.db)
+fontsize <- theme(axis.text=element_text(size=12), axis.title=element_text(size=16))
+```
+
+```{r braincyclepca, fig.width=10, fig.height=5, fig.cap="PCA plot of the brain dataset, using only genes with annotated functions in cell cycling or division.", eval=FALSE}
+ccgenes <- select(org.Mm.eg.db, keys=c("GO:0022403", "GO:0051301"), keytype="GOALL", column="SYMBOL")
+sce <- readRDS("brain_data.rds")
+chosen.genes <- which(rownames(sce) %in% ccgenes$SYMBOL)
+plotPCA(sce, feature_set=chosen.genes) + fontsize 
+```
+
+We can also identify hidden factors of variation across the annotated genes using `r Biocpkg("RUVSeq")`.
+This assumes that, if all cells were in the same phase of the cell cycle, there should be no DE across cells for genes associated with the cell cycle.
+Any systematic differences between cells are incorporated into the `W` matrix containing the factors of unwanted variation.
+These factors can then be included as covariates in the design matrix to absorb cell cycle effects in the rest of the dataset.
+We set `k=2` here to capture the variation corresponding to the two principal components in Figure ((braincyclepca)).
+
+```{r, eval=FALSE}
+library(RUVSeq)
+ruv.out <- RUVg(exprs(sce), isLog=TRUE, cIdx=chosen.genes, k=2)
+head(ruv.out$W)
+```
+
+In general, we prefer using the `cyclone`-based approach for phase identification and blocking.
+This is because the expression of some cell cycle genes may be affected by other biological/experimental factors at the single-cell level, 
+much like how the cell cycle affects the expression of non-cell cycle genes in the first place.
+As a result, the inferred factors of variation may include interesting differences between cells, such that blocking on those factors would result in loss of detection power.
+`cyclone` calls the phase for each cell separately and is more robust to systematic (non-cell-cycle-related) differences between cells.
+
+The obvious example would be if cells in the same phase had different amounts of expression for cell cycle genes, corresponding to some other factor (e.g., treatment).
+This would get picked up as a hidden factor of variation, leading to loss of power to detect that other factor.
+In contrast, `cyclone` wouldn't care as long as the relative amounts of expression of cell cycle genes (or more robustly, their ranked expression) within each cell are unchanged.
+Using `scLVM` would also work as it would learn the interesting factors of variation and block on them to avoid them getting regressed out with cell cycle phase.
+However, that kind of model is notoriously finicky due to the large numbers of moving parts.
+
+# Miscellaneous comments
+
+## Do we need zero inflation in our models?
+
+The main argument for a ZI model is that it is more accurate, through separation of the zero and non-zero components.
+For characterization of differences, this might be useful in cases where _both_ the proportion of zeros _and_ the non-zero mean increase in one condition compared to the other.
+Here, a standard DE analysis would be underpowered as there would be no change in mean between conditions.
+
+The main argument against a ZI model is that it is more troublesome to fit and interpret, due to the presence of a whole bunch of extra parameters.
+How can I get a direct estimate of the log-fold change between conditions, or variance across the population?
+NB distributions are probably sufficient (especially for UMI data) as they have a substantial probability mass at zero with large dispersions.
+The MAST model is particularly problematic as it uses a log-normal model, which means that it does not consider stochastic zeroes at all.
+
+As a side note, people often observe a trend in the proportion of zeros with increasing abundance.
+This is a natural consequence of the decreasing mass at zero with increasing mean, e.g., in a standard NB distribution.
+
+```{r}
+means <- 1:1000/10
+disp <- 1
+y <- matrix(rnbinom(100000, mu=means, size=1), nrow=length(means))
+dropout <- rowSums(y==0)/ncol(y)
+plot(means, dropout, log="x")
+```
+
+## Zeroes and clustering
+
+Stochastic zeroes due to low library sizes don't really distort the _expected_ clustering, as long as normalization is properly performed.
+After normalization, the cells should just be scattered around the true mean expression profile in high-D space, regardless of how many stochastic zeroes are present.
+(But see my comments about the log-transformation in the factor analysis section.)
+Behold the following examples:
+
+```{r}
+means <- 1:100
+ncells <- 100
+a <- matrix(rpois(length(means)*ncells, means*0.01), ncol=ncells)
+b <- matrix(rpois(length(means)*ncells, means), ncol=ncells)
+x <- cbind(a, b)
+
+# Normalizing (we can also log-transform, probably won't make a difference).
+norm.x <- t(t(x)/rep(c(1, 100), each=ncells))
+
+# No shift in PCA.
+pc.out <- prcomp(t(norm.x))
+plot(pc.out$x[,1], pc.out$x[,2], col=rep(c("blue", "red"), each=100))
+
+# No shift in t-SNE.
+library(Rtsne)
+tsne.out <- Rtsne(t(norm.x))
+plot(tsne.out$Y[,1], tsne.out$Y[,2], col=rep(c("blue", "red"), each=100))
+```
+
+The real problem is that cells with low library sizes are more dispersed, which causes them to form their own (poorly separated) cluster.
+Presumably due to the fact that cells with large library sizes form a tight community, and everyone else just gets chucked into the "leftovers" cluster.
+I though zeroes might have also distorted rank-based clustering due to the presence of ties.
+However, breaking those ties doesn't seem to make a difference.
+ 
+```{r}
+# Clustering on normalized values forms one cluster containing only (but not all) small cells.
+d <- dist(t(norm.x))
+library(dynamicTreeCut)
+obs <- cutreeDynamic(hclust(d), distM=as.matrix(d), minClusterSize=50)
+truth <- rep(1:2, each=ncells)
+table(truth, obs)
+
+# Clustering on ranks separates by the library sizes, though the means are the same.
+# This is not alleviated by tie breaking.
+library(scran)
+obs <- quickCluster(x, min.size=100)
+table(truth, obs) 
+obs <- quickCluster(x + runif(length(x), 0, 0.01), min.size=100)
+table(truth, obs)
+
+# This effect seems to be driven by differences in spread, rather than a shift in location.
+# A silhouette plot gives negative widths for the low-count cells.
+library(cluster)
+r <- quickCluster(x, get.ranks=TRUE)
+plot(silhouette(truth, dist(t(r))))
+
+# If you have enough structure, we can override this effect.
+a[1:10,1:50] <- 2
+b[1:10,1:50] <- 200
+y <- cbind(a, b)
+obs <- quickCluster(y, min.size=100)
+table(truth, obs) 
+```
+
+One could avoid this by downsampling, which would inflate the distribution for the larger counts.
+(The scaling of the expected expression is less important, as this is covered by normalization anyway.)
+This would ensure that the two sets of cells are well-mixed in terms of the spread around the center.
+However, it is unappealing as you're discarding information to reach a common "level" of quality, i.e., the lowest depth.
+At some point, you risk removing so much information that everything forms a blob.
+One must weigh the benefit of reduced batch-specificity in the clusters against the net loss of information.
+
+## Looking for differential distributions
+
+The logical conclusion of the ZI reasoning would be to look for differential distributions, e.g., via MW tests.
+This handles changes beyond the presence or absence of zeroes, including the presence of a lowly-expressing (but non-zero) population.
+However, this has its own problems, one of which is the difficulty in summarizing and interpreting the results with something other than repeated boxplots of distributions.
+Another is the fact that you can get differences in distributions due to technical effects like sequencing depth.
+Such effects are relatively easy to model in tests for the mean but confound distribution-based tests.
+This is because normalization usually only deals with the expectation of the biases, rather than adjusting for differences in the quantiles.
+
+```{r}
+wilcox.test(rpois(100, lambda=1)*10,
+            rpois(100, lambda=10))
+```
+
+So yes, testing for differential distributions would be nice, but it's hard to see how to do that rigorously.
+Biological interpretation of the differences is also _ad hoc_, requiring some clustering rather than relying on gene-by-gene inferences.
+Rigorous testing is better achieved with DE analyses, which better acommodates complex experimental designs.
+DE testing will allow you to get marker genes, which is much easier to interpret biologically.
+Also, with summation, DE testing avoids assumptions about the count distribution across cells.
+
+## Factor analysis vs PCA
+
+FA is more flexible with respect to properly modelling the distribution of observations.
+This will allow it to correctly weight low counts compared to high counts, which should yield more accurate dimensionality reduction results.
+It will also distinguish between random measurement error and correlated variance, more than PCA (and thus would probably plug into `denoisePCA` better).
+The trade-off is that it is sensitive to violations of the model (distributional) assumptions, possibly putting too much weight on some observations.
+FA also has no unique solutions and may also be slower, though PCA isn't exactly fast either.
+
+In theory, dimensionality reduction on log-expression values is not-quite-right because normalization only corrects for scaling effects on the counts.
+The effect of the log-transformation will differ between cells with low versus high library sizes, even when the mean expression is the same.
+FA should avoid this as the counts can be modelled directly, eliminating the need for log-transformation to stabilize the variances prior to dimensionality reduction.
+In practice, this doesn't really seem to matter - if the mean log-values differ with respect to the size factor, it implies that the variance at one size factor is much larger.
+This will prevent us from resolving a misleading shift in population centers that is solely driven by the log-transformation.
+Indeed, there doesn't seem to be a strong shift even with highly disparate size factors:
+
+```{r}
+# Using a large variance where there is more likely to be a difference.
+a <- rnbinom(10000, mu=100, size=0.1)
+b <- rnbinom(10000, mu=10, size=0.1)
+mean(log2(a/sqrt(10)+1))
+mean(log2(b*sqrt(10)+1))
+
+# Not a large difference, even at 100-fold difference in coverage.
+a <- rnbinom(10000, mu=100, size=0.1)
+b <- rnbinom(10000, mu=1, size=0.1)
+mean(log2(a/10+1))
+mean(log2(b*10+1))
+```
+
+## Do we need imputation?
+
+The difficulty with dealing with dropouts is that you don't know whether a zero count is a true dropout or due to a genuine lack of expression.
+This is very hard to tell for any given observation - even for a gene, you can only estimate the proportion of dropouts, and that's if you have spike-ins.
+Current (simple) imputation schemes operate more like smoothers, by replacing zeroes with some (hopefully sensible) non-zero value.
+The problem is that they impute from the same data that are used downstream, rather than using external data, e.g., as in variant calling.
+For example, to impute zeroes from "similar" cells, some measure of similarity needs to be established from the expression data.
+Further clustering on the imputed counts would just support the initial similarities, misleadingly so in some instances.
+
+```{r}
+set.seed(100)
+library(scater)
+counts <- matrix(rpois(100000, 10), ncol=100)
+sce <- newSCESet(countData = counts)
+mgc <- scater:::magic(sce)
+norm_exprs(sce) <- mgc
+pdf("blah.pdf")
+multiplot(plotPCA(sce, exprs_values="exprs"), # 2% explained by PC1
+          plotPCA(sce, exprs_values="norm_exprs")) # 100% explained!
+dev.off()          
+```
+
+One _could_ imagine an approach whereby you distinguish between biological and technical noise with spike-ins.
+This will allow you to determine, on probability, whether a zero is a dropout or not.
+You could then obtain a posterior distribution for each observation, and use the MAP estimate as the imputed value for zeroes.
+This brings us very close to the "denoised expression values" computed by _BASiCS_ or _BISCUIT_.
+However, _BASiCS_ assumes all cells are in a single group, and fails to account for substructure that can affect the expected count (and thus the probability of dropout).
+_BISCUIT_ allows for some substructure with a Dirichlet process, but assumes normality that is definitely not present.
+Both would probably produce distorted MAP estimates that are of questionable benefit.
+
+So, there is no imputation without denoising, given that the zeroes are just another consequence of technical noise.
+Our approach is to handle the drop-outs on a per-gene basis, by modelling the technical variability introduced by them.
+This is simpler, involves fewer assumptions, and with the low-rank approximations in `denoisePCA`, we can also obtain denoised expression values directly.
+
+## Dealing with oscillatory behaviour
+
+We don't explicitly identify oscillatory behaviour between two genes.
+A perfectly circular oscillation would result in zero correlation between genes.
+Hopefully, however, if the oscillation is driving some biological process, it would be correlated with other genes that are oscillating in the same phase.
+This would allow such genes to be detected without explicitly looking for oscillations.
+Needless to say, the genes should also be highly variable, but this should be the case if there is a strong biological signal.
+
+## Limits of detection and bias
+
+Is scRNA-seq data linear? 
+One would expect so; the number of reads generated from each molecule is a random variable, and the count for each gene is the sum of these RVs.
+Doubling the number of molecules should result in a doubling of the expected count, even when there are correlations between RVs due to cell-specific biases.
+This remains true upon decreasing abundance; there is no hard "detection limit", just a linear decrease in the expected count so that you get more zeroes.
+
+A variety of dilution experiments in the literature also demonstrate linearity across the dynamic range. 
+This is done by either diluting a single transcript (e.g., Figure 3 in the CEL-seq paper), which shows a linear (expected) response with respect to transcript concentration;
+or by diluting and plotting the counts of the diluted sample against the original, which should only be linear if the dilution downscales the counts.
+
+Note that linearity will break if sequencing resources are saturated, such that you get the same counts at any abundance of transcript.
+This should be handled by normalization, which suggests that your dilution experiments should include enough genes to normalize with. 
+
