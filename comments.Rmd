@@ -852,15 +852,25 @@ Needless to say, the genes should also be highly variable, but this should be th
 
 ## Limits of detection and bias
 
-Is scRNA-seq data linear? 
-One would expect so; the number of reads generated from each molecule is a random variable, and the count for each gene is the sum of these RVs.
-Doubling the number of molecules should result in a doubling of the expected count, even when there are correlations between RVs due to cell-specific biases.
-This remains true upon decreasing abundance; there is no hard "detection limit", just a linear decrease in the expected count so that you get more zeroes.
+Here are some theoretical arguments for why, in general, scRNA-seq data is linear.
 
-A variety of dilution experiments in the literature also demonstrate linearity across the dynamic range. 
+- Each transcript molecule should be processed independently from each other transcript molecule in the same reaction solution.
+The number of reads generated from each transcript molecule is a random variable, and the count for each gene is the sum of these RVs.
+Doubling the number of molecules should result in a doubling of the expected count.
+- The concept of a "detection limit" is also misleading: it's not as if, below a certain number of transcript molecules, no reads will be detected.
+This would require some mechanism of communication between transcript molecules in order that the total number of molecules can affect the processing of each molecule.
+It makes more sense to consider the probability of observing zero reads with decreasing abundance, as cDNA molecules are randomly sampled for sequencing.
+Having a lot of zero counts beyond a certain expected count is not evidence for a detection limit - this is a simple consequence of sampling.
+- Linearity should still hold if sequencing resources are saturated. 
+This would provide some sort of message passing mechanism as transcripts compete for sequencing resources.
+However, composition biases should affect all transcripts equally, and the final count should still be linear with respect to the number of input molecules.
+- _Slightly off-topic:_ the mean-dispersion trend is interesting as lower-abundance spike-ins often have higher dispersions.
+This shouldn't be possible if transcript molecules are captured independently of one another with the same probability.
+Instead, we can consider the number of reads generated from each transcript molecule as a NB distribution (or for UMIs, a Beta-binomial distribution of capture).
+The sum of counts from many transcripts will result in a lower dispersion for high-abundance genes, due to fluctuations in the process between molecules.
+
+In practice, a variety of dilution experiments in the literature also demonstrate linearity across the dynamic range. 
 This is done by either diluting a single transcript (e.g., Figure 3 in the CEL-seq paper), which shows a linear (expected) response with respect to transcript concentration;
 or by diluting and plotting the counts of the diluted sample against the original, which should only be linear if the dilution downscales the counts.
 
-Note that linearity will break if sequencing resources are saturated, such that you get the same counts at any abundance of transcript.
-This should be handled by normalization, which suggests that your dilution experiments should include enough genes to normalize with. 
 
