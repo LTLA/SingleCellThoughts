@@ -27,78 +27,87 @@ Aaron T. L. Lun\textsuperscript{1,*}
 
 \end{flushleft}
 
-\section{Overview of assumptions}
+\section{Description of method}
 Principal components analysis (PCA) is usually performed to obtain a small set of principal components (PCs) for use in clustering and dimensionality reduction.
 The aim is to reduce the random technical noise while preserving the biological signal in the first few PCs.
-The decrease in the number of dimensions also reduces computational work, which is especially important for some algorithms.
+Decreasing the number of dimensions also reduces computational work, which is especially important for some algorithms.
 
 We assume that the biological signal is wholly captured by the first few PCs.
-This is based on the fact that biological processes result in coordinated heterogeneity for many genes.
-If the loading vector is parallel to the biological subspace, it will explain a large proportion of variance in the data set.
-In contrast, technical noise should be mostly present in the later PCs.
-This is because the pattern of variation is random for each gene, meaning that any loading vector can only explain the variance for a single gene (or a few, in cases with many genes where non-zero correlations occur by chance).
+This is based on the fact that biological processes will generate non-zero covariance between multiple genes that are involved in those processes.
+If the loading vector is parallel to one of the basis vectors of the biological subspace, it will explain a component of the variance for every related gene.
+When summed across all genes, this will explain a large proportion of the total variance in the data set.
 
-We further assume that the total variance explained by each PC has a non-zero technical component.
-Even for the first PCs, the loading vector will capture some aspect of the technical noise that happens to be parallel to the biological subspace.
-We also assume that the technical component explained by earlier PCs is at least as large as that of later PCs.
-As the technical variance is random, the parallel component of the noise should usually not be smaller than the orthogonal component.
-In fact, when the technical noise is high, the loading vector can be skewed to capture the largest components of the orthogonal noise.
-This means that the earlier PCs tend to have the largest technical components, even though they also capture the biological signal.
+In contrast, technical noise should be mostly present in the later PCs.
+This is because technical noise is expected to be random and uncorrelated across genes.
+Any one loading vector can only explain the variance for a single gene (or a few, in cases with many genes where non-zero correlations occur by chance).
+Thus, each vector should only explain a small proportion of the variance.
+
+We describe elsewhere (see \verb!../hvg_detection/!) how to obtain an estimate of the technical component of the variance for each gene.
+This yields an estimate of the total technical variance $\sigma^2_t$ in the data set.
+We choose the number of PCs as the smallest value $k$ such that 
+\[
+    \sum_{l=k+1}^N s^2_l  \le \sigma^2_t \;,
+\]
+where $s^2_l$ describes the variance explained by the $l$\textsuperscript{th} PC and $N$ is the total number of PCs.
+This serves as a lower bound on the number of PCs required to preserve biology while removing technical noise.
 
 % Additivity of gene-wise variances in PCA just reflects the fact that we're looking at high-dimensional variance.
 % This has nothing to do with the independence of the genes (which is only relevant when you want to compute the variance of the sum).
 % Or in other words; we're just computing the squared distances of each cell from the center (origin).
 % This gives the same result if you do it all at once or sum the per-gene results.
 
-\section{Choosing the number of PCs to retain}
-Denote the variance explained by the $k$\textsuperscript{th} PC as $s^2_k$, with $K$ PCs in total.
-Assume that the first $k^*$ PCs contain the biological signal, contributing at least
+In practice, we only use genes where the total variance is greater than the estimated technical component.
+This ensures that there is some value of $k \in [1, N]$ that will satisfy the above inequality.
+It also reduces random noise that can skew the loading vectors for the first PCs if the biological signal is weak.
+However, it likely will result in some overestimation of the biological noise and of $k$.
+
+\section{Why a lower bound?} 
+
+\subsection{Justification}
+The choice of $k$ is a lower bound as it assumes that the first $k$ PCs contain \textit{only} biological variability.
+However, even for the earliest PCs, the loading vector will capture some aspect of the technical noise that happens to be parallel to the biological subspace.
+This means that the variance explained by these PCs will contain a non-zero technical component.
+Conversely, some of the biological variability must be explained by later PCs, as it cannot be fully accounted for in the first $k$ PCs.
+
+When the technical noise is high, the loading vector can be skewed to capture the largest components of the noise.
+This means that the earlier PCs tend to have the largest technical components, even though they also capture the biological signal.
+Such an effect will increase the discrepancy between our choice of $k$ and the ``true'' number of PCs that needs to be retained to preserve the biological variability.
+Of course, it is debatable whether obtaining the true number of PCs is desirable for noisy data, as this will reduce the effectiveness of denoising and dimensionality reduction. 
+
+\subsection{Alternative}
+If we weaken the assumption that the technical component is zero in the first $k$ PCs, we might obtain a more suitable choice for the number of PCs.
+Assume that the first $k$ PCs contain the entirety of the biological signal, but also contribute at least
 \[
-    k^* s^2_{k^*+1}
+    k s^2_{k+1} 
 \]
 to the total technical variance in the data. 
-The remaining PCs contribute
+Here, we assume that the technical component explained by a PC is at least as large as that of any later PC (such as the $k+1$\textsuperscript{th} PC).
+This is generally reasonable in noisy data where the loading vectors for early PCs are skewed by random noise.
+Combined with the noise in the later PCs, the total technical variance must be at least
 \[
-    \sum_{l=k^*+1}^K s^2_l 
+    k s^2_{k+1} + \sum_{l=k+1}^N s^2_l \;.
 \]
-as they only contain technical noise.
-Thus, the total technical variance must be at least
+One could then choose the smallest $k$ that satisfies
 \[
-    k^* s^2_{k^*+1} + \sum_{l=k^*+1}^K s^2_l 
+    k^* s^2_{k^*+1} + \sum_{l=k+1}^K s^2_l \le \sigma^2_t  
 \]
+to obtain a more accurate lower bound on $k$ that preserves biological signal.
 
-Let $T$ be the total technical variance in the data, computed as the sum of $\sigma^2_{(t)g}$ for all genes used in the PCA.
-The best estimate of $k^*$ is the smallest value that satisfies 
-\begin{equation}
-    T \ge k^* s^2_{k^*+1} + \sum_{l=k^*+1}^K s^2_l  \label{eqn:pcachoice} \;.
-\end{equation}
-Discarding all PCs above $k^*$ will remove the technical noise while preserving the biological signal in the earlier PCs.
-Any smaller values of $k^*$ will overstate the noise in the data and remove PCs associated with biological heterogeneity,
-whereas larger values will retain more technical noise than is necessary. 
-We only use genes with positive $\hat\sigma^2_{(b)g}$ it guarantees that the total variance is greater than $T$.
-This ensures that there is some value of $k^* \in [1, K]$ that will satisfy Inequality~\ref{eqn:pcachoice}.
-It also reduces random noise that can skew the loading vectors for the first PCs if the biological signal is weak.
-However, it likely will result in some overestimation of the biological noise and of $k^*$.
+In practice, this alternative approach tends to yield very large $k$, which defeats the purpose of denoising and dimensionality reduction.
+Moreover, it can be unstable with small changes in $\sigma^2_t$ resulting in large changes to the chosen $k$.
+This is because the gradient with respect to $k$ of the LHS of the above inequality can be very small.
+For the most extreme case where all $s^2_l$ are very similar, we could obtain near-identical LHS values for a range of $k$.
+By comparison, the original approach has a LHS that is supralinear with respect to $k$, such that a well-defined choice of $k$ can be obtained for any $\sigma^2_t$.
 
-\section*{Further comments}
-Our approach performs well in the simulations in \texttt{simulations/pca}.
-In most cases, at least 80\% of the biological variance is retained while over 90\% of the technical variance is removed.
-There are, however, some caveats with the performance of the method:
-\begin{itemize}
-    \item Even if our assumptions hold, the method tends to understate $k^*$ in most applications.
-        This is because $k^*$ is chosen as the first value where Inequality~\ref{eqn:pcachoice} is not violated.
-        Lower values will definitely begin to remove biological variance, but there is no guarantee that the chosen value will retain all biological variance.
-        As a result, some of the biological component is usually lost.
-    \item In data where the biological signal is weak relative to the technical noise, the first assumption does not hold.
-        Biological variance is distributed throughout all PCs, making it impossible to isolate by selecting the first few PCs.
-        These situations are simulated in \texttt{simulations/pca} as involving weak clusters, supported by few genes with small fold changes or involving few cells.
-        Arguably, this situation is challenging for any analysis, regardless of the preprocessing steps used.
-    \item In data where the biological signal is very strong, the second assumption does not hold.
-        While the early PCs do capture \textit{some} technical variance, later PCs can have larger technical components.
-        This is because they are not constrained to be parallel to the biological subspace, and are free to capture the maximum amount of variance due to technical noise.
-        In practice, this results in overestimation of $k^*$, which reduces the efficiency with which technical noise is removed.
-\end{itemize}
+\section{Simulation results}
+In the simulations in \verb!simulations/pca!, over 99\% of the technical noise is removed in most scenarios.
+At least 80\% of the biological variance is usually retained, though this depends on the scenario.
+Worst performance is generally observed where the biological separation between subpopulations is weak;
+the number of subpopulations is high relative to the number of cells; or the number of genes involved is low.
+This represents the expected consequences of strong violations of our assumption of zero technical noise in the first $k$ PCs.
+Arguably, though, such cases are challenging for any dimensionality reduction technique.
 
+\section{Further comments}
 It is difficult to apply this approach exactly in multi-batch experiments where the technical noise must be modelled separately in each batch.
 This may be because a different set of spike-ins were added, or the same spike-in set was used at a different concentration.
 It may not be possible to obtain a single trend for the technical noise in the combined data, especially as batch correction usually only adjusts the mean and not the variance.

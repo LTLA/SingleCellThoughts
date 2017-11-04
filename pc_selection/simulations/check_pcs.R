@@ -9,19 +9,25 @@ assessPCA <- function(observed, truth) {
 #    stopifnot(isTRUE(all.equal(total.var, sum(apply(observed, 1, var)))))
 #    stopifnot(isTRUE(all.equal(total.var, sum(apply(x$x, 2, var)))))
     
-    true.pos <- t(truth- x$center) %*% x$rotation 
-    bio.var <- apply(true.pos, 2, var)
-    tech.var <- total.var - sum(bio.var)
-
+    tech.var <- sum(apply(observed - truth, 1, var))
     npcs <- length(prog.var)
     flipped.prog.var <- rev(prog.var)
-    estimated.contrib <- cumsum(flipped.prog.var) + flipped.prog.var * (npcs:1 - 1L)
-    estimated.contrib <- rev(estimated.contrib)
 
-    retained <- min(which(tech.var > estimated.contrib))
-    old.retained <- npcs - min(which(cumsum(rev(x$sdev^2)) > tech.var)) + 1
-    return(list(bio=bio.var, tech=prog.var - bio.var, total=prog.var, 
-                retained=retained, old=old.retained))
+## Too unstable to fluctuations!
+#    estimated.contrib <- cumsum(flipped.prog.var) + flipped.prog.var * (npcs:1 - 1L)
+#    estimated.contrib <- rev(estimated.contrib)
+#    retained <- min(which(tech.var > estimated.contrib))
+    retained <- npcs - min(which(cumsum(prog.var) > tech.var)) + 1
+
+    # These aren't quite right, they only approximate the two components.
+    ps.bio.pos <- t(truth - x$center) %*% x$rotation 
+    ps.bio.var <- apply(ps.bio.pos, 2, var)
+
+    scatter <- observed - truth
+    ps.tech.pos <- t(scatter) %*% x$rotation 
+    ps.tech.var <- apply(ps.tech.pos, 2, var)
+
+    return(list(bio=ps.bio.var, tech=ps.tech.var, total=prog.var, retained=retained))
 }
 
 out.tab <- "results_pca.txt"
@@ -41,19 +47,19 @@ for (ncells in c(200, 500, 1000)) {
                         true.means[-seq_len(affected*ngenes),] <- 0
                         y <- matrix(rnorm(ngenes*ncells, mean=true.means), ncol=ncells)
                        
+                        observed<-y
+                        truth <- true.means
                         out <- assessPCA(y, true.means)
                         bio.prop[[it]] <- sum(out$bio[seq_len(out$retained)])/sum(out$bio)
                         tech.prop[[it]] <- sum(out$tech[seq_len(out$retained)])/sum(out$tech)
                         nkept[[it]] <- out$retained
-                        old.kept[[it]] <- out$old
                     }
 
                     nkept <- mean(unlist(nkept))
-                    old.kept <- mean(unlist(old.kept))
                     tech.prop <- mean(unlist(tech.prop))
                     bio.prop <- mean(unlist(bio.prop))
                     write.table(file=out.tab, data.frame(Ncells=ncells, Ngenes=ngenes, Prop.DE=affected,
-                                                         Npops=npops, Bio.SD=sd, NPC=nkept, Old=old.kept, 
+                                                         Npops=npops, Bio.SD=sd, NPC=nkept, 
                                                          Bio.Prop=bio.prop, Tech.Prop=tech.prop),
                                 sep="\t", quote=FALSE, row.names=FALSE, col.names=new.file, append=!new.file)
                     new.file <- FALSE
