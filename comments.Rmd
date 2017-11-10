@@ -74,10 +74,15 @@ The number definitely varies between cells, see https://dx.doi.org/10.1002/jcp.1
 and the ratio of mitochondrial RNA to total RNA also varies, see Figure 2F of https://dx.doi.org/10.1016/j.cell.2011.06.051.
 It seems to go above the 5% threshold that people regularly use, which really kills the use of a hard threshold.
 
-In practice, cells with high mitochondrial proportions tend to have low total counts, so perhaps the biological effect is not so bad.
-There's also no choice for data without spike-ins; a quick plot of mitochondrial proportions against the total count can verify that you're not removing obvious biology.
+In practice, cells with high mitochondrial proportions tend to have low total counts, so perhaps the biological effect is not so pronounced.
+There's also no choice for data without spike-ins; in which case, plotting mitochondrial proportions against the total count can verify that you're not removing obvious biology.
 In fact, if the number of mitochondria per size of the cell were constant (probably untrue), then the mitochondrial proportion would be a better measure of cell damage,
 as the spike-in proportion would also be affected by the total RNA content of the cell.
+On the flip side, the mitochondrial proportions don't tell you much about the ambient background - 
+indeed, if cytoplasmic RNA is preferentially lost from cells, empty wells might contain lower relative mitochondrial proportions.
+
+All in all, if I can remove cells with the other QC metrics, I'd prefer to do so.
+I would only trust mitochondrial proportions if they aligned with the other metrics anyway.
 
 ### Batch-by-batch quality control
 
