@@ -58,13 +58,26 @@ Some heterogeneity is tolerated provided that the inter-state variance of the me
 I'm not sure there's a good automatic way to distinguish between low quality cells and those from a different cell type when heterogeneous QC metrics are observed.
 You might think to use the expression of endogenous genes to gauge whether the QC-outliers form a cluster and thus might be a genuine cell type.
 However, the point is that poor quality affects the observed expression in ways that are difficult to normalize [@ilicic2016classification].
-It would not be easy to tell whether a cluster was due to genuine biological separation or due to technical differences in quality.
-In the most obvious case, all the empty wells might cluster together, even though this is clearly not a cell type.
+It would not be subsequently easy to tell whether a cluster was due to genuine biological separation or due to technical differences in quality.
+In the most obvious case, all the empty wells might cluster together due to the ambient RNA, even though this is clearly not a cell type.
 
 If the assumption above is violated, the only solution is to set some hard absolute threshold.
 This only removes cells that are "absolutely" poor for further work (normalization, etc.) while giving those that are "relatively" poor the benefit of the doubt.
 However, this requires a _lot_ of context and/or experience to get right.
 Identifying outliers directly from the endogenous genes is also not ideal, as this would just eliminate rare subpopulations and understate cellular heterogeneity.
+
+### Mitochondrial proportions vs spike-ins
+
+I've generally considered the mitochondrial proportion to be worse than the spike-in proportion for providing a measure of cell damage.
+This is because the former is additionally affected by the number and activity of the mitochondria, whereas the latter is not.
+The number definitely varies between cells, see https://dx.doi.org/10.1002/jcp.1041360316;
+and the ratio of mitochondrial RNA to total RNA also varies, see Figure 2F of https://dx.doi.org/10.1016/j.cell.2011.06.051.
+It seems to go above the 5% threshold that people regularly use, which really kills the use of a hard threshold.
+
+In practice, cells with high mitochondrial proportions tend to have low total counts, so perhaps the biological effect is not so bad.
+There's also no choice for data without spike-ins; a quick plot of mitochondrial proportions against the total count can verify that you're not removing obvious biology.
+In fact, if the number of mitochondria per size of the cell were constant (probably untrue), then the mitochondrial proportion would be a better measure of cell damage,
+as the spike-in proportion would also be affected by the total RNA content of the cell.
 
 ### Batch-by-batch quality control
 
