@@ -77,14 +77,17 @@ The proportion seems to go above the 5% threshold that people regularly use, whi
 More generally, the use of the mitochondrial proportions depends on a fairly restricted type of damage.
 The cell has to leak large amounts of cytoplasmic RNA without losing mitochondria.
 In cases of severe damage, only the nucleus would be left and you would get mitochondrial proportions of zero.
+
 On the flip side, if the number of mitochondria per cell volume were constant (probably untrue), then the mitochondrial proportion would be a better measure of cell damage,
 as the spike-in proportion would also be affected by the total RNA content of the cell.
-
-In practice, cells with high mitochondrial proportions tend to have low total counts, so perhaps the biology is not so pronounced in this metric.
+Cells with high mitochondrial proportions also tend to have low total counts in real data, so perhaps the biology is not so pronounced in this metric.
 There's also no choice for data without spike-ins, such as droplet data.
 In those cases, plotting mitochondrial proportions against the total count can verify that you're not removing obvious biology.
-However, I would only trust mitochondrial proportions if they aligned with the other metrics anyway.
+
+I would only trust mitochondrial proportions if they aligned with the other metrics anyway.
 It's too early in the analysis to add a whole bunch of assumptions about consistency of the mitochondrial ratios across the population.
+If mitochondrial proportions have an effect, the mitochondrial genes should show up as highly variable, at which point you can make a decision about whether to filter on this metric.
+You can't do the same with spike-ins as spike-in-specific normalization means that you should never see the spike-ins systematically appear in the HVG set.
 
 ### Batch-by-batch quality control
 
@@ -97,6 +100,19 @@ In general, it seems better to block on more factors rather than fewer, to avoid
 The risk is that you'll lose more cells within each batch because the MAD is smaller, such that an uncommon subset of (high-quality) cells end up being removed.
 However, you should never expect to encounter this situation under the homogeneity assumption.
 If that assumption fails, then the concept of low-quality cells being outliers is inherently invalid.
+
+### Arguments for light-touch (or no) QC
+
+One could argue that it would be better not to do any QC at all to avoid discarding small cell types.
+This is not possible with current pipelines as cells with low total counts/low numbers of expressed features are too noisy.
+They often form their own poorly separated cluster (see below), and the imprecision in the normalized count means that they can dominate the first PCs.
+You would need to use FA to account for the uncertainty of these estimates during dimensionality reduction, but this would require a major shift of the entire pipeline.
+
+It would be nice to check whether we are discarding important cells, but we can't rely on the individual discarded cells for characterization.
+Instead, we can pool them together and generate a MA plot between the averages of the discarded/retained cells (via `calcAverage`).
+Strong positive log-fold changes represent marker genes that are expressed in the discarded pool, and possibly a lost cell type.
+(Moderate changes are still expected as some cell types may be preferentially damaged or lysed.
+These can be ignored if enough of the relevant cells are retained in the downstream analysis.)
 
 ## Cell filtering before gene filtering
 
