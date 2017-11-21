@@ -1,0 +1,169 @@
+# Why should measurements be linear?
+
+## Theoretical arguments
+
+Each transcript molecule should be processed independently from each other transcript molecule in the same reaction volume.
+The number of reads generated from each transcript molecule is a random variable, and the count for each gene is the sum of these RVs.
+Doubling the number of molecules should result in a doubling of the expected count.
+
+The concept of a "detection limit" is also misleading: it's not as if, below a certain number of transcript molecules, no reads will be detected.
+This would require some mechanism of communication between transcript molecules in order that the total number of molecules can affect the processing of each molecule.
+It makes more sense to consider the probability of observing zero reads with decreasing abundance, as cDNA molecules are randomly sampled for sequencing.
+Having a lot of zero counts beyond a certain expected count is not evidence for a detection limit - this is a simple consequence of sampling.
+
+Linearity should still hold if sequencing resources are saturated. 
+This would provide some sort of message passing mechanism as transcripts compete for sequencing resources.
+However, composition biases should affect all transcripts equally, and the final count should still be linear with respect to the number of input molecules.
+
+## Practical arguments
+
+Ideally, linearity is demonstrated by diluting spike-ins and adding it to the same pool of cellular RNA.
+You would then look for linearity in the counts for each spike-in compared to the dilution. 
+This should be done per transcript to avoid transcript-specific effects that could cause scatter around the trend.
+The availability of a pool of endogenous RNA also simplifies normalization.
+Something similar is shown in Figure 3 of the CEL-seq paper (http://dx.doi.org/10.1016/j.celrep.2012.08.003).
+
+The simpler, more common approach is to plot the theoretical abundances of the spike-ins against the observed count.
+Here are several instances where this can be found:
+
+- Figure 1d in Pollen et al. (http://dx.doi.org/10.1038/nbt.2967)
+- Figure S6a in Wu et al. (http://dx.doi.org/10.1038/nmeth.2694)
+- Figure S11 in Lun et al. (http://dx.doi.org/10.1101/gr.222877.117)
+- Figure 2a in Hashimony et al. (https://doi.org/10.1186/s13059-016-0938-8)
+
+# Why should measurements not be linear?
+
+## Theoretical arguments 
+
+As previously mentioned, this requires a message-passing mechanism between transcripts.
+The most obvious way that this can be managed is through hybridization.
+If reverse transcription is only partially completed and the cDNA dissociates from the RNA, it is easier to re-hybridize if there are many other transcripts of the same type.
+This means that the probability of successful reverse transcription becomes dependent on the abundance of the transcript.
+Subsequently, it is possible to have non-linear behaviour, most obviously at low abundances where the chance of re-hybridization may be low.
+
+## Practical arguments 
+
+Comparison of single-cell averages to bulk equivalents in Hicks et al. (https://doi.org/10.1093/biostatistics/kxx053) show discrepancies at low abundances.
+This corresponds to non-linear behaviour where the single-cell averages systematically drop below their bulk counterparts for a number of genes.
+Similar arguments motivate the development of _SCnorm_ (https://doi.org/10.1038/nmeth.4263).
+
+One way to test for coverage-associated non-linearity is to examine size factors computed with low- and high-abundance genes.
+In particular, we examine the variances of the two sets of log-factors, and the variance in the difference of the log-factors.
+We then consider three scenarios:
+
+1. If the measurements are linear, the variances should be similar between the two sets of log-factors.
+Any differences in variances of the log-factors should be due to random estimation noise.
+This would mean that the differences in variance would be equal to the variance of the difference.
+2. If decreases in transcript abundance resulted in a superlinear decrease in the counts, the variance of the log-factors from low-abundance genes should be larger.
+This is because the expression of low-abundance genes would be disproportionately lower in cells that have low size factors.
+However, the difference in the variance should be larger than the variance of the differences.
+This is because, in the latter, part of the variance in the low-abundance factors is explained by the fact that the high-abundance factors are low.
+3. If decreases in abundance resulted in a sublinear decrease in the counts, the variance of the log-factors from low-abundance genes would be smaller.
+This is because the expression of low-abundance genes would be closer to the average in cells that have low size factors.
+Again, the difference in the variance would be larger than the variance of the differences, as one set of factors explains the variance in the other. 
+
+Both data sets here correspond mostly to scenario 1, though I imagine that this could be different.
+
+```{r}
+library(scran)
+library(scater)
+sce <- readRDS("../hsc_data.rds")
+ab <- calcAverage(sce)
+bottom <- ab < median(ab)
+summary(ab[bottom])
+summary(ab[!bottom])
+sf.low <- computeSumFactors(sce, subset.row=bottom & ab > 1, min.mean=NULL, sf.out=TRUE)
+sf.hi <- computeSumFactors(sce, subset.row=!bottom & ab > 1, min.mean=NULL, sf.out=TRUE)
+var(log10(sf.hi)) # 0.01557266
+var(log10(sf.low)) # 0.02057023
+var(log10(sf.hi/sf.low)) # 0.005032726
+
+sce2 <- readRDS("../brain_data.rds")
+ab2 <- calcAverage(sce2)
+clusters <- quickCluster(sce2, subset.row=ab2 > 0.1, method="igraph")
+bottom2 <- ab2 < quantile(ab2, 0.75)
+summary(ab2[bottom2])
+summary(ab2[!bottom2])
+sf.low2 <- computeSumFactors(sce2, subset.row=bottom2 & ab2 > 0.1, cluster=clusters, min.mean=NULL, sf.out=TRUE)
+sf.hi2 <- computeSumFactors(sce2, subset.row=!bottom2 & ab2 > 0.1, cluster=clusters, min.mean=NULL, sf.out=TRUE)
+var(log10(sf.hi2)) # 0.1046154
+var(log10(sf.low2)) # 0.09856944
+var(log10(sf.hi2/sf.low2)) # 0.007944335
+
+# In comparison, the difference between size factors and library sizes
+# still explains a fairly large proportion of the size factor variability.
+# Obviously doesn't happen in the HSC data, which is too homogeneous to care.
+var(log10(sizeFactors(sce2)/colSums(counts(sce2)))) # 0.02962633
+```
+
+# Solutions to non-linearity
+
+## Overview 
+
+Non-linearity is problematic as it breaks out global scaling normalization methods.
+Differences in the expectation of low-abundance genes are no longer properly eliminated by scaling methods.
+This could result in systematic differences between cells in the expression space, which are technically driven and not of interest.
+There are two obvious workarounds to this - non-linear normalization, and blocking on the RNA content of each cell.
+
+## Motivation for not using non-linear normalization
+
+It's very hard to fit a robust trend with respect to abundance.
+Most robust methods (e.g., loess) rely on normality, and the log-transformation becomes highly dependent on the pseudo-count at low counts.
+We could use discrete GLMs but that depends on proper specification of dispersions and is also less robust to outliers.
+
+Another problem is that non-linear normalization assumes that most genes at each point of the covariate range are not DE.
+This is reasonable in bulk data, but might not hold at the single-cell level.
+Cell-to-cell heterogeneity and intra-cell correlations means that it is entirely possible that we get large-scale shifts in highly expressed genes.
+For example, a subpopulation may upregulate a set of genes, resulting in a skew in a particular abundance category.
+This would be eliminated upon normalization, which would not be ideal.
+
+## Blocking on the RNA content
+
+Consider the situation where we fail to normalize non-DE genes correctly due to non-linearity.
+This requires having differences in transcript numbers of non-DE genes during RT, etc.. which is most obviously driven by changes in total RNA content between cellls.
+In effect, total RNA content drives normalization errors, which introduces systematic variation in homogeneous populations.
+(The errors involved are probably too small to distort genuine biological effects.)
+This is despite the fact that it should have been normalized out already.
+
+To get around this, we could imagine blocking on measures of total RNA content, e.g., the cellular detection rate as done in _MAST_.
+This would allow us to regress out the normalization error and avoid problems in downstream analyses.
+The obvious problem is that this may also regress out meaningful biology, especially for cell types that differ in RNA content (or whatever proxy is being used).
+For example, we have observed differences in the total number of expressed features between mESCs cultured under different conditions.
+More severe differences would probably be present between different cell types.
+
+# Non-linearities introduced by log-transformation
+
+The log-transformation does not entirely preserve linearity because normalization only corrects for scaling effects on the counts.
+The effect of the log-transformation will differ between cells with low versus high library sizes, even when the mean expression is the same.
+This is because the log-mean depends on the variance of the counts, which is different between cells with low and high coverage.
+
+In practice, this doesn't really seem to matter - if the mean log-values differ with respect to the size factor, it implies that the variance at one size factor is much larger.
+This will prevent us from resolving a misleading shift in population centers that is solely driven by the log-transformation.
+Indeed, there doesn't seem to be a strong shift even with highly disparate size factors:
+
+```{r}
+# Using a large variance where there is more likely to be a difference.
+a <- rnbinom(10000, mu=100, size=0.1)
+b <- rnbinom(10000, mu=10, size=0.1)
+mean(log2(a/sqrt(10)+1))
+mean(log2(b*sqrt(10)+1))
+
+# Not a large difference, even at 100-fold difference in coverage.
+a <- rnbinom(10000, mu=100, size=0.1)
+b <- rnbinom(10000, mu=1, size=0.1)
+mean(log2(a/10+1))
+mean(log2(b*10+1))
+```
+
+# Explaining the mean-dispersion trend
+
+The count distributions for Lower-abundance spike-in transcripts often have higher dispersions.
+This shouldn't be possible if transcript molecules are captured independently of one another with the same fixed probability.
+In such a system, everything should be effectively Poisson distributed (assuming rare capture).
+
+Instead, we can consider the number of reads generated from each transcript molecule as a NB distribution.
+For UMIs, we can similarly consider a Beta-binomial distribution where the capture probability fluctuates between molecules.
+The sum of counts from many transcripts will subsequently result in a lower dispersion for high-abundance genes, due to averaging of fluctuations in the process between molecules.
+
+
+

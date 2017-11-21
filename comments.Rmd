@@ -202,56 +202,9 @@ Obviously, not doing any filtering or selection would be troublesome, e.g., when
 
 # Normalization comments
 
-## Motivation for not using non-linear normalization
+## Why not library size normalization?
 
-There are probably some non-linear biases in scRNA-seq data, i.e., beyond global scaling.
-However, these are a pain to deal with because it's hard to fit a robust trend with respect to abundance.
-Most robust methods (e.g., loess) rely on normality, and log-transforming counts becomes highly dependent on the pseudo-count at low counts.
-Conversely, we could use discrete GLMs but that depends on proper specification of dispersions and is also less robust to outliers.
-
-Another problem is that non-linear normalization assumes that most genes at each point of the covariate range are not DE.
-This is reasonable in bulk data, but might not hold at the single-cell level.
-Cell-to-cell heterogeneity and intra-cell correlations means that it is entirely possible that we get large-scale shifts in highly expressed genes.
-For example, a subpopulation may upregulate a set of genes, resulting in a skew in a particular abundance category.
-This would be eliminated upon normalization, which would not be ideal.
-
-Finally, the non-linear effects seem relatively minor compared to other things, e.g., between-cell variability, plate effects.
-Variance in the size factors due to non-linearity in the HSC data set is an order of magnitude smaller than variance in the size factors themselves.
-It's probably worse between batches, but then you should be blocking on batch anyway.
-The worst is likely observed DE analyses that are overpowered due to the large number of cells, but that has other problems...
-
-```{r}
-library(scran)
-sce <- readRDS("hsc_data.rds")
-ab <- calcAverage(sce)
-bottom <- ab < median(ab)
-summary(ab[bottom])
-summary(ab[!bottom])
-sf.low <- computeSumFactors(sce, subset.row=bottom, sizes=c(20, 40, 60, 80), sf.out=TRUE)
-sf.hi <- computeSumFactors(sce, subset.row=!bottom, sizes=c(20, 40, 60, 80), sf.out=TRUE)
-var(log10(sf.hi)) # 0.0161
-var(log10(sf.hi/sf.low)) # 0.0013
-
-sce2 <- readRDS("brain_data.rds")
-clusters <- quickCluster(sce2)
-ab2 <- calcAverage(sce2)
-bottom2 <- ab2 < quantile(ab2, 0.75)
-summary(ab2[bottom2])
-summary(ab2[!bottom2])
-sf.low2 <- computeSumFactors(sce2, subset.row=bottom2, cluster=clusters, sf.out=TRUE)
-sf.hi2 <- computeSumFactors(sce2, subset.row=!bottom2, cluster=clusters, sf.out=TRUE)
-var(log10(sf.hi2)) # 0.0941
-var(log10(sf.hi2/sf.low2)) # 0.0082
-
-# In comparison, the difference between size factors and library sizes
-# still explains a fairly large proportion of the size factor variability.
-var(log10(sizeFactors(sce2)/colSums(counts(sce2)))) # 0.0300
-var(log10(colSums(counts(sce)))) # 0.0369
-var(log10(sizeFactors(sce2))) # 0.1039
-# Obviously doesn't happen in the HSC data, which is too homogeneous to care.
-```
-
-Note that library size normalization is usually sufficient for purposes of cell type identification.
+Normalizing on library size is usually sufficient for purposes of cell type identification.
 Separation of cell types is robust as the presence of differences in the expression profile is not affected by the scaling factor.
 However, the interpretation of these differences is sensitive to the choice of normalization strategy.
 For example, depending on whether you use spike-in or non-DE normalization, you can flip the sign of the log-fold changes.
@@ -822,27 +775,7 @@ This will allow it to correctly weight low counts compared to high counts, which
 It will also distinguish between random measurement error and correlated variance, more than PCA (and thus would probably plug into `denoisePCA` better).
 The trade-off is that it is sensitive to violations of the model (distributional) assumptions, possibly putting too much weight on some observations.
 FA also has no unique solutions and may also be slower, though PCA isn't exactly fast either.
-
-In theory, dimensionality reduction on log-expression values is not-quite-right because normalization only corrects for scaling effects on the counts.
-The effect of the log-transformation will differ between cells with low versus high library sizes, even when the mean expression is the same.
-FA should avoid this as the counts can be modelled directly, eliminating the need for log-transformation to stabilize the variances prior to dimensionality reduction.
-In practice, this doesn't really seem to matter - if the mean log-values differ with respect to the size factor, it implies that the variance at one size factor is much larger.
-This will prevent us from resolving a misleading shift in population centers that is solely driven by the log-transformation.
-Indeed, there doesn't seem to be a strong shift even with highly disparate size factors:
-
-```{r}
-# Using a large variance where there is more likely to be a difference.
-a <- rnbinom(10000, mu=100, size=0.1)
-b <- rnbinom(10000, mu=10, size=0.1)
-mean(log2(a/sqrt(10)+1))
-mean(log2(b*sqrt(10)+1))
-
-# Not a large difference, even at 100-fold difference in coverage.
-a <- rnbinom(10000, mu=100, size=0.1)
-b <- rnbinom(10000, mu=1, size=0.1)
-mean(log2(a/10+1))
-mean(log2(b*10+1))
-```
+FA with a log-link function should avoid distortions due to the log-transformation of raw counts.
 
 ## Do we need imputation?
 
@@ -885,28 +818,4 @@ A perfectly circular oscillation would result in zero correlation between genes.
 Hopefully, however, if the oscillation is driving some biological process, it would be correlated with other genes that are oscillating in the same phase.
 This would allow such genes to be detected without explicitly looking for oscillations.
 Needless to say, the genes should also be highly variable, but this should be the case if there is a strong biological signal.
-
-## Limits of detection and bias
-
-Here are some theoretical arguments for why, in general, scRNA-seq data is linear.
-
-- Each transcript molecule should be processed independently from each other transcript molecule in the same reaction solution.
-The number of reads generated from each transcript molecule is a random variable, and the count for each gene is the sum of these RVs.
-Doubling the number of molecules should result in a doubling of the expected count.
-- The concept of a "detection limit" is also misleading: it's not as if, below a certain number of transcript molecules, no reads will be detected.
-This would require some mechanism of communication between transcript molecules in order that the total number of molecules can affect the processing of each molecule.
-It makes more sense to consider the probability of observing zero reads with decreasing abundance, as cDNA molecules are randomly sampled for sequencing.
-Having a lot of zero counts beyond a certain expected count is not evidence for a detection limit - this is a simple consequence of sampling.
-- Linearity should still hold if sequencing resources are saturated. 
-This would provide some sort of message passing mechanism as transcripts compete for sequencing resources.
-However, composition biases should affect all transcripts equally, and the final count should still be linear with respect to the number of input molecules.
-- _Slightly off-topic:_ the mean-dispersion trend is interesting as lower-abundance spike-ins often have higher dispersions.
-This shouldn't be possible if transcript molecules are captured independently of one another with the same probability.
-Instead, we can consider the number of reads generated from each transcript molecule as a NB distribution (or for UMIs, a Beta-binomial distribution of capture).
-The sum of counts from many transcripts will result in a lower dispersion for high-abundance genes, due to fluctuations in the process between molecules.
-
-In practice, a variety of dilution experiments in the literature also demonstrate linearity across the dynamic range. 
-This is done by either diluting a single transcript (e.g., Figure 3 in the CEL-seq paper), which shows a linear (expected) response with respect to transcript concentration;
-or by diluting and plotting the counts of the diluted sample against the original, which should only be linear if the dilution downscales the counts.
-
 
