@@ -45,7 +45,12 @@ Subsequently, it is possible to have non-linear behaviour, most obviously at low
 
 Comparison of single-cell averages to bulk equivalents in Hicks et al. (https://doi.org/10.1093/biostatistics/kxx053) show discrepancies at low abundances.
 This corresponds to non-linear behaviour where the single-cell averages systematically drop below their bulk counterparts for a number of genes.
+That said, it is unsurprising that you get non-linearities when you increase the amount of input RNA by several orders of magnitude.
+One could argue that such effects would be minor between cells with more similar amounts of RNA.
+
 Similar arguments motivate the development of _SCnorm_ (https://doi.org/10.1038/nmeth.4263).
+
+# Testing for non-linearities in any data set
 
 One way to test for coverage-associated non-linearity is to examine size factors computed with low- and high-abundance genes.
 In particular, we examine the variances of the two sets of log-factors, and the variance in the difference of the log-factors.
@@ -103,6 +108,7 @@ var(log10(sizeFactors(sce2)/colSums(counts(sce2)))) # 0.02962633
 Non-linearity is problematic as it breaks out global scaling normalization methods.
 Differences in the expectation of low-abundance genes are no longer properly eliminated by scaling methods.
 This could result in systematic differences between cells in the expression space, which are technically driven and not of interest.
+(Or at the very least, they are driven by differences in the initial RNA content, which is not totally uninteresting but may be undesirable nonetheless.)
 There are two obvious workarounds to this - non-linear normalization, and blocking on the RNA content of each cell.
 
 ## Motivation for not using non-linear normalization
