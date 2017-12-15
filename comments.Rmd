@@ -443,6 +443,87 @@ This is not the case in most data sets, which suggests that conservativeness is 
 (Or even if it was, and the first d.f. was effectively underestimated under non-normality, `fitFDistRobustly` would compensate by increasing the second d.f.
 This only works to a point, though, because if the second d.f. is already large, further increases will converge to the chi-squared boundary.)
 
+## Enforcing the use of centered size factors
+
+To illustrate this, consider the following situation where the amount of spike-in is doubled in one batch.
+The mean-dispersion relationship is still the same, and nothing has changed with the counts themselves.
+
+```{r}
+set.seed(100)
+ncells <- 200
+     
+nspikes <- 100
+spike.means <- 2^runif(nspikes, 3, 8)
+spike.disp <- 100/spike.means + 0.5
+spike.data <- matrix(rnbinom(nspikes*ncells, mu=spike.means, size=1/spike.disp), ncol=ncells)
+
+spike.means2 <- spike.means*2
+spike.disp2 <- 100/spike.means2 + 0.5
+spike.data2 <- matrix(rnbinom(nspikes*ncells, mu=spike.means2, size=1/spike.disp2), ncol=ncells)
+     
+ngenes <- 2000
+cell.means <- 2^runif(ngenes, 2, 10)
+cell.disp <- 100/cell.means + 0.5
+cell.data <- matrix(rnbinom(ngenes*ncells*2, mu=cell.means, size=1/cell.disp), ncol=ncells*2)
+
+counts <- rbind(cell.data, cbind(spike.data, spike.data2))
+y <- SingleCellExperiment(list(counts=counts))
+isSpike(y, "Spike") <- ngenes + seq_len(nspikes)
+```
+
+Let's normalize using globally-centered size factors and examine the batch-specific trend fits.
+This is pretty bad, reflecting the differences in the average size factors between spike-in and endogenous genes in each batch.
+In the first batch, the spike-in size factors are systematically smaller than unity.
+As a result, the spike-in counts are scaled _up_, shifting the curve to the right (and also increasing the fitted values due to the reduced shrinkage effect of the pseudo-count).
+The opposite happens in the second batch, shifting the curve to the left and decreasing the fitted values.
+
+```{r}
+y <- computeSumFactors(y) 
+y <- computeSpikeFactors(y, general.use=FALSE)
+y <- normalize(y)
+
+y1 <- y[,1:ncells]
+fit1 <- trendVar(y1)
+dec1 <- decomposeVar(y1, fit1)
+y2 <- y[,1:ncells+ncells]
+fit2 <- trendVar(y2)
+dec2 <- decomposeVar(y2, fit2)
+
+par(mfrow=c(1,2))
+plot(dec1$mean, dec1$total)
+points(fit1$mean, fit1$var, col="blue")
+curve(fit1$trend(x), col="red", add=TRUE)
+plot(dec2$mean, dec2$total)
+points(fit2$mean, fit2$var, col="blue")
+curve(fit2$trend(x), col="red", add=TRUE)
+```
+
+On the other hand, running `normalize` before calling `trendVar` causes the fit to be much better behaved.
+This is due to centering of the size factors such that the same average scaling is applied to both the spike-in transcripts and endogenous genes.
+
+```{r}
+y1 <- normalize(y1)
+fit1 <- trendVar(y1)
+dec1 <- decomposeVar(y1, fit1)
+y2 <- normalize(y2)
+fit2 <- trendVar(y2)
+dec2 <- decomposeVar(y2, fit2)
+
+par(mfrow=c(1,2))
+plot(dec1$mean, dec1$total)
+points(fit1$mean, fit1$var, col="blue")
+curve(fit1$trend(x), col="red", add=TRUE)
+plot(dec2$mean, dec2$total)
+points(fit2$mean, fit2$var, col="blue")
+curve(fit2$trend(x), col="red", add=TRUE)
+```
+
+Note that using `block` will not perform re-normalization with centred size factors within `trendVar`.
+This is mainly for logistical reasons, especially as the `decomposeVar` would also need to re-normalize (in which case, you might as well just split it in the first place).
+Thus, there is an implicit assumption that the quantity of spike-in RNA does not change between levels when usign `block`.
+This can be diagnosed by plotting the spike-in variances separately for the two blocks.
+I do not think this is a major limitation as the main purpose of `block` is to account for biological differences in expression that affect the estimated technical component.
+
 # Correlation comments
 
 ## Using HVGs as a pre-screen
