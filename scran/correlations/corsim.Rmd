@@ -1,0 +1,171 @@
+---
+title: Some thoughts on testing for correlations
+author: Aaron Lun
+date: 18 February 2017
+output:
+  html_document:
+    fig_caption: false 
+---
+
+```{r, echo=FALSE, results="hide"}
+dir.create("figure-cor", showWarning=FALSE)
+knitr::opts_chunk$set(error=FALSE, warning=FALSE, message=FALSE, fig.path="figure-cor/")
+options(width=100)
+```
+
+# Why use a modified rho?
+
+The modification simplifies things by allowing the same tie-free null distribution to be used for all genes.
+It also means that we can get spuriously large correlations (which we would have been protected from, had we considered ties).
+However, this is acceptable as we can let the error-control machinery deal with the possibility of such spuriously large values.
+We also don't have to account for HVG identification in multiple testing here, because correlations are independent of the variance of the genes.
+
+```{r, eval=FALSE}
+library(scran)
+set.seed(1023423)
+ncells <- 100
+null.dist <- correlateNull(ncells)
+all.p <- list()
+for (it in 1:10000) {
+    x1 <- rpois(ncells, lambda=10)
+    x2 <- rpois(ncells, lambda=20)
+    rho2 <- cor(rank(x1, ties.method="random"), rank(x2, ties.method="random"), method="spearman")
+    all.p[[it]] <- sum(null.dist >= rho2)/length(null.dist)
+}
+sum(unlist(all.p) <= 0.01)/10000
+sum(unlist(all.p) <= 0.05)/10000
+```
+
+The idea is to mitigate dependence on explicit subpopulation identification for follow-up studies.
+We identify strongly correlated genes first, then only need to check for subpopulations as a diagnostic.
+This reduces the sensitivity of the analysis to ambiguity/uncertainty during subpopulation identification.
+It's possible because validation requires genes, not subpopulations (as the current cells are destroyed), so we skip the middleman.
+
+We can also check what happens with a design matrix.
+Naively comparing against a null distribution of correlations that was constructed without considering the design will result in loss of control.
+Rather, the null distribution should be compared to an appropriate null, as shown below.
+
+```{r}
+set.seed(12120)
+design <- model.matrix(~factor(rep(1:5, 2)))
+y <- matrix(rnorm(1000, mean=rep(1:5, 5), sd=2), ncol=10, byrow=TRUE)
+null <- correlateNull(ncol(y))
+out <- correlatePairs(y, design=design, null=null)
+plot(log10(sort(out$p.value)/1:nrow(out)*nrow(out))) # wrong
+null <- correlateNull(design=design, residuals=TRUE)
+out <- correlatePairs(y, design=design, null=null, residuals=TRUE)
+plot(log10(sort(out$p.value)/1:nrow(out)*nrow(out))) # right
+```
+
+Note that counts of zero will have the same normalized log-expression, even if the library sizes are different.
+For non-zero counts, correlations may be driven by library size differences between cells.
+This is, perhaps, less problematic, as a gene with the same count in a small and large cell is presumably downregulated in the latter.
+
+# Statistical issues to be solved
+
+## Problems with exchangeability
+
+Generation of the null distribution assumes exchangeability of observations.
+Specifically, there is the assumption that all observations are equally likely to receive any rank when performing the permutations.
+This will not be the case in practice as some observations are more variable than others, depending on the mean-variance relationship.
+As such, the variance of the correlations under the null will be underestimated: 
+
+```{r}
+means <- rep(c(5, 50), each=50)
+disp <- rep(c(1, 0.1), each=50)
+counts <- matrix(rnbinom(50000, mu=means, size=1/disp), byrow=TRUE, ncol=length(means))
+counts <- t(t(counts)/means)
+actual.cor <- cor(t(counts), method="spearman") 
+pretend.cor <- correlateNull(100, iters=10000)
+var(as.vector(actual.cor))
+var(pretend.cor)
+testing <- correlatePairs(counts, pretend.cor)
+hist(testing$p.value) # fairly substantial loss of type I error control
+```
+
+I'm not sure that there's any way to get around this, without making some strong parametric assumptions about how the variance affects the ranking.
+I guess we'll just have to suck it up - at least we get some level of protection from spurious correlations.
+
+## Deficiencies with residuals
+
+An obvious approach is to just estimate the correlations between residuals.
+However, this is problematic, even in simple one-way layouts.
+Consider a situation where you have two groups, with zeroes in almost all cells except for a few.
+When you calculate residuals for each gene, you'll get blocks of values corresponding to the zeroes.
+The exact value of these blocks with likely differ between groups; this can generate apparent correlations between genes.
+
+```{r}
+X <- model.matrix(~rep(LETTERS[1:2], each=50))
+g1 <- integer(100)
+g1[1] <- 100
+g1[51] <- 1000
+r1 <- lm.fit(X, g1)$residuals
+g2 <- integer(100)
+g2[3] <- 200
+g2[53] <- 2000
+r2 <- lm.fit(X, g2)$residuals
+cor(r1, r2, method="spearman")
+```
+
+The problem above is why we calculate correlations within each group.
+However, this is not possible for complex designs where we need to know the exact effect of each nuisance term on expression and thus the rank.
+Consider the following, where you get correlations of 1 because the residual effects will be increasingly negative for zeros with larger covariate values.
+(Of course, the same problem would be present if you misspecified the model, regardless of the presence of zeroes.)
+
+```{r}
+covariates <- 1:100
+Y <- model.matrix(~covariates)
+g3 <- integer(100)
+g3[100] <- 1000
+r3 <- lm.fit(Y, g3)$residuals
+g4 <- integer(100)
+g4[100] <- 2000
+r4 <- lm.fit(Y, g4)$residuals
+cor(r3, r4, method="spearman")
+```
+
+<!--
+Don't use residual effects directly, as they're not robust to outliers.
+Don't bother trying to fit a linear model to the ranks, either.
+I thought it would be a generalization of the definition of Spearman's (Pearson's on ranks).
+However, there's no guarantee that unevenly-spaced covariates (or factors, for that matter) will make sense when fitted to ranks.
+-->
+
+## Motivating the use of a lower bound on the ranks
+
+An _ad hoc_ solution is to set all residuals computed from zeroes to a constant value.
+This preserves the ties between zeroes, thus avoiding the problems with correlations above.
+To justify this, consider the process of correcting the raw expression values to remove the nuisance effects:
+
+1. There is a lower bound on the expression values, derived from applying the equivalent transformation to a count of zero.
+2. Correction involves modifying the expression values such that the coefficients for the nuisance effects are equal to zero.
+This is most easily done by replacing the expression values with their residuals plus some intercept term.
+3. An expression value at the lower bound cannot drop below the bound upon correction, by definition.
+Similarly, an expression value at the lower bound cannot increase upon correction, as this suggests expression where there is no evidence for it.
+Thus, all expression values at the lower bound should stay at the bound upon correction.
+4. The intercept is defined so that the corrected values of non-lower-bound observations are always greater than the lower bound.
+This is reasonable as there is evidence for expression for those observations compared to values at the bound.
+
+To implement this, we fit a linear model, compute the residuals, and set the residuals for all lower-bound observations to a value below the smallest residual.
+This is equivalent to computing corrected values with an intercept value that fulfills requirement 4 above.
+The exact value does not matter for rank-based methods, as long as it is clearly lower than other residuals.
+
+We now look at the performance of _scran_'s correlation calculator with a lower bound.
+This avoids the problems with overstatement of the correlation.
+While the _p_-values are unlikely to be accurate here, the normality assumption in simulating the observations is a bigger problem, so don't sweat the small stuff.
+
+```{r}
+set.seed(1020)
+nulls <- correlateNull(design=X, iters=1e4, residuals=TRUE)
+correlatePairs(rbind(g1, g2), design=X, residuals=TRUE, null=nulls, lower.bound=NA) # Bad
+correlatePairs(rbind(g1, g2), design=X, residuals=TRUE, null=nulls, lower.bound=0) # Good
+nulls <- correlateNull(design=Y, iters=1e4, residuals=TRUE)
+correlatePairs(rbind(g3, g4), design=Y, residuals=TRUE, null=nulls, lower.bound=NA) # Bad
+correlatePairs(rbind(g3, g4), design=Y, residuals=TRUE, null=nulls, lower.bound=0) # Good
+```
+
+# Wrapping up
+
+```{r}
+sessionInfo()
+```
