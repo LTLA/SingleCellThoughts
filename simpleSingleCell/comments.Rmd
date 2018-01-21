@@ -210,6 +210,45 @@ However, the interpretation of these differences is sensitive to the choice of n
 For example, depending on whether you use spike-in or non-DE normalization, you can flip the sign of the log-fold changes.
 This could completely alter your determination of what the clusters actually represents.
 
+## Quick clustering with binarized data
+
+An alternative to using `quickCluster` is to cluster on whether a gene is expressed or not.
+This is technically invariant to scaling, avoiding circularity between clustering and normalization.
+However, the clusters are more affected by bias than if rank correlations had been used, as the number of expressed features is tightly correlated to the library size.
+This means that you run the risk of clustering by library size rather than by actual differences in the expression profiles.
+
+```{r}
+# Constructing an expression matrix.
+set.seed(100)
+ngenes <- 1000
+prof1 <- runif(ngenes)
+prof2 <- runif(ngenes)
+true.means <- cbind(outer(prof1, rep(c(0.5, 2), each=50)),
+                    outer(prof2, rep(c(0.5, 2), each=50)))
+counts <- rpois(length(true.means), lambda=true.means)
+dim(counts) <- dim(true.means)
+
+# Computing distances with these two methods.
+by.cor <- sqrt(0.5*(1-cor(counts, method="spearman")))
+by.bin <- as.matrix(dist(t(counts)>0))
+
+# Figuring out which ones are good and bad.
+cell.ids <- paste0(rep(c("A", "B"), each=100), 
+                   rep(c(".s", ".l", ".s", ".l"), each=50))
+pair.ids <- outer(cell.ids, cell.ids, FUN=paste, sep="-")
+
+par(mfrow=c(1,2))
+keep <- lower.tri(by.cor)
+cor.box <- split(by.cor[keep], pair.ids[keep])
+boxplot(cor.box, col=ifelse(grepl("A.*A", names(cor.box)) | grepl("B.*B", names(cor.box)), "grey80", "red"))
+bin.box <- split(by.bin[keep], pair.ids[keep])
+boxplot(bin.box, col=ifelse(grepl("A.*A", names(bin.box)) | grepl("B.*B", names(bin.box)), "grey80", "red"))
+```
+
+The above simulation demonstrates this point, where small cells are more likely to cluster together with binarized data, irrespective of the population of origin.
+In contrast, the rank correlations are more appropriate as distance measures.
+Distances increase with small cells where the data are noisier, this is inevitable regardless of what method you use.
+
 ## Should we standardize the log-counts?
 
 Should we standardize the log-expression values?
