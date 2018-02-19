@@ -249,28 +249,6 @@ The above simulation demonstrates this point, where small cells are more likely 
 In contrast, the rank correlations are more appropriate as distance measures.
 Distances increase with small cells where the data are noisier, this is inevitable regardless of what method you use.
 
-## Should we standardize the log-counts?
-
-Should we standardize the log-expression values?
-This ensures that all genes contribute the same amount of variance, thereby eliminating the mean-variance relationship.
-Genes in the middle of the range with high technical variance will not dominate the variance of the data set.
-However, there are several drawbacks:
-
-- Standardizing would downweight interesting genes with large total variances due to the biological component.
-This could conceivably reduce the resolution of biological differences between cells, especially if technical noise gets upweighted.
-Conversely, lowly variable genes would end up having disproportionate impact as they get scaled up.
-This is of greater concern than the dominance of HVGs in unscaled data, as there are a lot more lowly variable genes than HVGs.
-- An alternative strategy is to scale the log-expression values so that all genes have the same technical component.
-This avoids the loss of resolution associated with downweighting of HVGs, by focusing only on the technical component.
-However, it implicitly upweights genes with low technical noise and small (non-zero) biological components.
-As a result, the scaled values might be dominated by biological variability that was originally minor.
-- Any scaling would distort the true log-fold changes for genes between subpopulations, which has implications when using the transformed values for DE analyses.
-It also affects interpretation of relative distances between three or more groups of cells, e.g., are two groups more related than a third group?
-
-Scaling of the technical components will eliminate the mean-variance relationship most efficiently.
-This ensures that the distribution of variances of non-HVGs will be the same across abundances, but will distort the biological component for HVGs.
-A better and simpler approach is to enriched for biological signal by only using HVGs in clustering, dimensionality reduction, etc.
-
 ## Pre-clustering parameter choices
 
 We filter before we pre-cluster to ensure that we have the same set of genes being used in `quickCluster` and `computeSumFactors`.

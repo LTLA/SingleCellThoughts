@@ -1,0 +1,50 @@
+# Should we standardize the log-counts?
+
+## Rationale
+
+Standardization ensures that all genes contribute the same amount of variance to downstream steps like PCA and clustering.
+This avoids problems caused by the mean-variance relationship of log-count data.
+In particular, it means that genes in the middle of the range with high technical variance will not dominate the variance of the data set.
+
+## Drawbacks of standardization
+
+Standardizing will downweight the contribution of interesting genes with large total variances due to biological heterogeneity. 
+This will reduce the resolution of biological differences between cell populations.
+Of course, some genes may just be biologically noisy, but more often than not, large biological components will represent some interesting structured variation.
+Conversely, standardization will implicitly upweight genes with low total variance and small (non-zero) biological components.
+This will amplify biological variability that was originally minor, which may be misleading.
+
+The effects of standardization are also unpredictable, as distances between subpopulations become dependent on other structures in the data.
+To illustrate, imagine a dataset containing two subpopulations.
+One of them highly expresses gene X, while the other only has moderate expression - thus, we are able to distinguish these two populations on the expression of gene X.
+Now, imagine adding a third subpopulation that is silent for gene X.
+If standardization is performed, this will reduce the power of X to discriminate between the first two subpopulations.
+This is counterintuitive as nothing has changed between the first two subpopulations.
+
+Any scaling distorts the true log-fold changes for genes between subpopulations, though I would hope that the scaled data are not being used for DE analyses.
+It also affects interpretation of relative distances between three or more groups of cells, by changing the scale of the log-fold changes across genes.
+That is, are two groups more related than a third group?
+However, this is probably less relevant as log-fold changes between different genes are difficult to compare sensibly anyway.
+
+## Exploiting the technical component
+
+The main aim of standardization is to eliminate uninteresting differences in variance between genes.
+Unfortunately, we can't say whether the biological component is interesting or not.
+Even if we only wanted the structured heterogeneity, we'd only be able to make some kind of distinction after clustering.
+(In which case, scaling based on the clusters and then re-clustering would probably pose some problems with circularity.)
+
+The only aspect that we can confidently say is uninteresting is the technical component, e.g., due to sequencing/capture/amplification noise in the protocol.
+In theory, this is a better justification for standardization.
+Most genes will have low-to-zero biological components, which suggests that standardization will equalize the technical component across the dataset.
+This means that we can avoid domination by a few genes with large technical components.
+
+In some respects, this represents a bias-precision trade-off for the estimate of the underlying substructure in the data.
+Standardization will bias the estimate in favour of improving precision by reducing the contribution of genes with large technical components.
+Personally, I don't think that the presence of a few genes with large technical components is a major concern.
+With thousands of genes in PCA or clustering, one should still be able to recover the substructure, regardless of the random scatter in each dimension.
+One might have more of a problem if the technical noise was much greater than the biological heterogeneity.
+However, even in this case, there's no guarantee that standardization will help, as it may not scale down the technical noise faster than the biological component.
+
+Incidentally, one could instead scale on the technical components.
+This will eliminate the mean-variance relationship most efficiently and ensure that the distribution of variances of non-HVGs will be the same across abundances.
+However, it will distort the biological component for HVGs, especially amplifying the contribution of high-abundance lowly variable genes.
