@@ -2,6 +2,8 @@
 
 ## Theoretical arguments
 
+### Mean effects
+
 Each transcript molecule should be processed independently from each other transcript molecule in the same reaction volume.
 The number of reads generated from each transcript molecule is a random variable, and the count for each gene is the sum of these RVs.
 Doubling the number of molecules should result in a doubling of the expected count.
@@ -14,6 +16,16 @@ Having a lot of zero counts beyond a certain expected count is not evidence for 
 Linearity should still hold if sequencing resources are saturated. 
 This would provide some sort of message passing mechanism as transcripts compete for sequencing resources.
 However, composition biases should affect all transcripts equally, and the final count should still be linear with respect to the number of input molecules.
+
+### An aside into variance effects
+
+The count distributions for lower-abundance spike-in transcripts often have higher dispersions.
+This shouldn't be possible if transcript molecules are captured independently of one another with the same fixed probability.
+In such a system, everything should be effectively Poisson distributed (assuming rare capture).
+
+Instead, we can consider the number of reads generated from each transcript molecule as a NB distribution.
+For UMIs, we can similarly consider a Beta-binomial distribution where the capture probability fluctuates between molecules.
+The sum of counts from many transcripts will subsequently result in a lower dispersion for high-abundance genes, due to averaging of fluctuations in the process between molecules.
 
 ## Practical arguments
 
@@ -131,16 +143,14 @@ This would be eliminated upon normalization, which would not be ideal.
 ## Blocking on the RNA content
 
 Consider the situation where we fail to normalize non-DE genes correctly due to non-linearity.
-This requires having differences in transcript numbers of non-DE genes during RT, etc.. which is most obviously driven by changes in total RNA content between cellls.
+This requires having differences in transcript numbers of non-DE genes during RT, etc. which is most obviously driven by changes in total RNA content between cellls.
 In effect, total RNA content drives normalization errors, which introduces systematic variation in homogeneous populations.
 (The errors involved are probably too small to distort genuine biological effects.)
 This is despite the fact that it should have been normalized out already.
 
 To get around this, we could imagine blocking on measures of total RNA content, e.g., the cellular detection rate as done in _MAST_.
 This would allow us to regress out the normalization error and avoid problems in downstream analyses.
-The obvious problem is that this may also regress out meaningful biology, especially for cell types that differ in RNA content (or whatever proxy is being used).
-For example, we have observed differences in the total number of expressed features between mESCs cultured under different conditions.
-More severe differences would probably be present between different cell types.
+The obvious problem is that this may also regress out meaningful biology; see `cdr.Rmd` for details.
 
 # Non-linearities introduced by log-transformation
 
@@ -165,16 +175,3 @@ b <- rnbinom(10000, mu=1, size=0.1)
 mean(log2(a/10+1))
 mean(log2(b*10+1))
 ```
-
-# Explaining the mean-dispersion trend
-
-The count distributions for Lower-abundance spike-in transcripts often have higher dispersions.
-This shouldn't be possible if transcript molecules are captured independently of one another with the same fixed probability.
-In such a system, everything should be effectively Poisson distributed (assuming rare capture).
-
-Instead, we can consider the number of reads generated from each transcript molecule as a NB distribution.
-For UMIs, we can similarly consider a Beta-binomial distribution where the capture probability fluctuates between molecules.
-The sum of counts from many transcripts will subsequently result in a lower dispersion for high-abundance genes, due to averaging of fluctuations in the process between molecules.
-
-
-
