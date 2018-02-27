@@ -1,0 +1,112 @@
+# Cellular detection rate
+
+## Arguments against
+
+The obvious argument against using the CDR is the fact that it may be confounded with condition or cell type, such that meaningful biology is regressed out.
+For example, we have observed differences in the total number of expressed features between mESCs cultured under different conditions (Kolod data).
+More severe differences would probably be present between different cell types.
+Also see Supplementary Figures 2A, 4 and 6 in Charlotte's Nat Comm's paper, where inclusion of the CDR as a covariate results in fewer DE genes.
+
+We can also perform a little illustration with some simulated data in a linear modelling framework.
+The confounding effect is strongest when the groups are well separated on the number of detected genes.
+Inclusion of the CDR in the model severely reduces the significance of the p-value:
+
+```{r}
+set.seed(1000)
+y <- rnorm(100) + rep(c(0, 1), each=50)
+g <- gl(2, 50)
+cov <- rnorm(100) + rep(c(0, 3), each=50)
+summary(lm(y ~ g + cov))$coefficient
+summary(lm(y ~ g))$coefficient
+```
+
+Fortunately, this extreme change in p-values is probably uncommon, the separation between cell types on the CDR should be minimal.
+Even if the population means are well-separated, there should be enough noise that the two distributions are quite well mixed.
+This reduces the confounding impact, as `cov` represents a much noisier proxy for `g` that results in a poorer fit.
+The noise is further exacerbated when `cov` is scaled in the linear model to match the magnitude of difference due to `g`.
+
+```{r}
+set.seed(100)
+y <- rnorm(100) + rep(c(0, 1), each=50)
+g <- gl(2, 50)
+cov <- rnorm(100) + rep(c(0, 1), each=50)
+summary(lm(y ~ g + cov))$coefficient
+summary(lm(y ~ g))$coefficient
+```
+
+Nonetheless, there is still some increase in the p-value that cannot be dismissed, especially when multiple testing correction comes into play.
+For example, with a different seed:
+
+```{r}
+set.seed(300)
+y <- rnorm(100) + rep(c(0, 1), each=50)
+g <- gl(2, 50) 
+cov <- rnorm(100) + rep(c(0, 1), each=50)
+summary(lm(y ~ g + cov))$coefficient
+summary(lm(y ~ g))$coefficient
+```
+
+## Arguments for
+
+The main argument for using the CDR is that it mops up errors in normalization, by serving as a proxy for any leftover technical biases (see `linearity.Rmd` for comments).
+This was primarily proposed for _MAST_, though at least some of the benefit is probably due to the fact that the zeroes are modelled separately.
+
+```{r}
+set.seed(0)
+library(MAST)
+mus <- rep(c(0.1, 1), each=100)
+y <- matrix(rnbinom(10000, mu=mus, size=10), byrow=TRUE, ncol=length(mus))
+sca <- FromMatrix(log2(t(t(y)/mus)+1)) # log-counts: for reasons unknown to me, log-CPMs don't work.
+g <- gl(2, 100)
+Z <- zlm(~g, sca)
+out <- summary(Z, n=nrow(Z), doLRT='g2')
+hist(as.numeric(out$datatable[,4][[1]]))
+```
+
+This gets a lot better if you throw in the CDR as a covariate.
+It suggests that the much of the benefit from using the CDR is specific to MAST's hurdle model, where scaling of the mean count is not otherwise handled.
+
+```{r}
+cdr <- colSums(y==0)
+Z <- zlm(~cdr + g, sca)
+out <- summary(Z, n=nrow(Z), doLRT='g2')
+hist(as.numeric(out$datatable[,4][[1]]))
+``
+
+## Use in data exploration
+
+Another question is whether regression on the CDR should be performed prior to data exploration, and the residuals used for PCA and clustering.
+I would suggest not, as all of the underlying factors of variation are not fully known.
+Unless the CDR is completely orthogonal to the structure, the coefficient for the former will absorb some of the latter.
+At best, this will result in loss of power to detect structured heterogeneity.
+
+At worst, artificial structure will be introduced. 
+This is because the residuals will be spuriously correlated across genes when the model is consistently misspecified.
+Consider the following example where a small subset of cells with large CDRs have upregulation for a few genes.
+The residuals are correlated as the trend is not properly fitted, being dragged up by the subpopulation.
+This results in an apparent trajectory along the first PC, which is not present if the CDR was not used.
+
+```{r}
+# Mocking up some data.
+set.seed(0)
+y <- matrix(rpois(10000, lambda=5), ncol=100)
+y[,91:100] <- rpois(10*100, lambda=20)
+
+# Assume that the CDR is just increasing.
+library(edgeR)
+cdr <- 1:100
+design <- model.matrix(~cdr)
+fit <- glmFit(y, design, dispersion=0, offset=0)
+r <- (y - fit$fitted.value)/sqrt(fit$fitted.value)
+
+pc <- prcomp(t(r))
+par(mfrow=c(1,2))
+col <- rgb(0,0,seq(0.9, 0, length.out=100))
+plot(pc$x[,1], pc$x[,2], pch=16, col=col, main="With CDR")
+
+# Repeat it with an empty design matrix, for comparison.
+fit0 <- glmFit(y, design[,1], dispersion=0, offset=0)
+r0 <- (y - fit0$fitted.value)/sqrt(fit0$fitted.value)
+pc0 <- prcomp(t(r0))
+plot(pc0$x[,1], pc0$x[,2], pch=16, col=col, main="No CDR")
+```
