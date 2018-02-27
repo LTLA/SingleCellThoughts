@@ -20,10 +20,10 @@ summary(lm(y ~ g + cov))$coefficient
 summary(lm(y ~ g))$coefficient
 ```
 
-Fortunately, this extreme change in p-values is probably uncommon, the separation between cell types on the CDR should be minimal.
-Even if the population means are well-separated, there should be enough noise that the two distributions are quite well mixed.
-This reduces the confounding impact, as `cov` represents a much noisier proxy for `g` that results in a poorer fit.
-The noise is further exacerbated when `cov` is scaled in the linear model to match the magnitude of difference due to `g`.
+Fortunately, this extreme change in p-values is probably uncommon - in practice, the separation between cell types on the CDR should be minimal.
+Even if the population means are well-separated, there should be enough variability in sequencing depth, etc. that the two distributions are quite well mixed.
+This reduces the confounding impact, as `cov` is a much noisier proxy for `g` that results in a poorer fit.
+The effect of noise is further exacerbated when `cov` needs to be scaled in the linear model to match the magnitude of difference corresponding to the `g` effect.
 
 ```{r}
 set.seed(100)
@@ -50,6 +50,7 @@ summary(lm(y ~ g))$coefficient
 
 The main argument for using the CDR is that it mops up errors in normalization, by serving as a proxy for any leftover technical biases (see `linearity.Rmd` for comments).
 This was primarily proposed for _MAST_, though at least some of the benefit is probably due to the fact that the zeroes are modelled separately.
+Without the CDR, the hurdle model cannot handle scaling differences in means (even after normalization) due to the different frequencies of zeroes.
 
 ```{r}
 set.seed(0)
@@ -63,7 +64,7 @@ out <- summary(Z, n=nrow(Z), doLRT='g2')
 hist(as.numeric(out$datatable[,4][[1]]))
 ```
 
-This gets a lot better if you throw in the CDR as a covariate.
+This gets a lot better if you throw in the CDR as a covariate, as this soaks up the differences between groups and restores type I error control.
 It suggests that the much of the benefit from using the CDR is specific to MAST's hurdle model, where scaling of the mean count is not otherwise handled.
 
 ```{r}
@@ -71,7 +72,7 @@ cdr <- colSums(y==0)
 Z <- zlm(~cdr + g, sca)
 out <- summary(Z, n=nrow(Z), doLRT='g2')
 hist(as.numeric(out$datatable[,4][[1]]))
-``
+```
 
 ## Use in data exploration
 
