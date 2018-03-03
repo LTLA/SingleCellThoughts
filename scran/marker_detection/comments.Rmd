@@ -125,3 +125,11 @@ Namely, they assume a constant dispersion and they are sensitive to cluster miss
 
 It is fairly simple to run _edgeR_ separately, so I didn't consider the need to create a wrapper for the LRT-related methods.
 It would be easy to do so, though; simply modify _findMarkers_ to accept some function that returns p-values and log-fold changes given the data and a pair of groups.
+
+# Welch versus Student
+
+In theory, we could perform Student's t-test in situations where there is only one cell in one of the groups.
+However, we do not do so as it is often compromised by discreteness in scRNA-seq data.
+If the group with many cells contains only zero counts, the sample variance becomes zero, which would be incorrect.
+More generally, I do not think it is possible to report a reliable p-value when there is only one observation in one group, 
+especially as the mean-variance relationship is considered.
