@@ -1,0 +1,127 @@
+# Why t-tests?
+
+In versions up to 1.7.0, _scran_ used _limma_ to compute p-values for the pairwise comparisons between clusters.
+However, I have switched it to use Welch t-tests instead, motivated by several factors:
+
+1. Speed.
+Only cluster-specific means and standard deviations need to be calculated, rather than fitting a linear model to each gene.
+2. Accommodation of differences in variance between clusters.
+This is particularly important for handling the mean-variance relationship upon differential expression.
+The classic example is that of a cluster with all-zero expression; a linear model would incorrectly shrink the sample variance towards zero in such cases.
+3. Robustness to misspecification of clusters.
+This is relevant when clusters _other than the ones being tested_ are misspecified, as their information does not get used in pairwise t-tests.
+In contrast, inflation of the sample variance would be observed with a linear model.
+
+# Comparison to _limma_
+
+The obvious downside to our use of t-tests is the loss of power from reduced information. 
+This comes in three forms:
+
+- Reduced residual d.f. for the pair of groups being compared.
+This is because a sample variance is estimated separate for each group, rather than across both groups as would have been done with Student's t-test or a linear model.
+The loss of power is exacerbated when blocking is involved, where a sample variance needs to be estimated for each block/group combination.
+- Reduced residual d.f. for each gene, due to the fact that information is only used from a pair of groups. 
+In contrast, a linear model would use information across all groups to estimate the residual variance.
+- No empirical Bayes shrinkage from _limma_.
+This means that we do not get any benefit from a larger total d.f. due to the contribution of the prior d.f.
+On the other hand, this avoids any funny business with the distributional assumptions of the variances, especially at low counts and with a misspecified model.
+
+We hope that the loss of power is minor due to the fact that we already have large residual d.f. in single-cell studies.
+Let us demonstrate by running a few simulations to examine the type II error rate.
+First we set up some functions to simulate the data and to perform the tests:
+
+```{r}
+getY <- function(grouping, diff=1, ngenes=10000) {
+    means <- as.integer(factor(grouping))*diff
+    matrix(rnorm(length(means)*ngenes, mean=means), nrow=ngenes, byrow=TRUE)
+}
+library(limma)
+runLimma <- function(grouping, y, comp) {
+    g <- factor(grouping)
+    design <- model.matrix(~0+g)
+    fit <- lmFit(y, design)
+    con <- makeContrasts(contrasts=sprintf("g%s - g%s", comp[1], comp[2]), levels=design)
+    fit <- contrasts.fit(fit, con)
+    fit <- eBayes(fit)
+    return(fit$p.value)
+}
+runT <- function(grouping, y, comp) {
+    y1 <- y[,grouping==comp[1]]
+    y2 <- y[,grouping==comp[2]]
+    outp <- numeric(nrow(y))
+    for (x in seq_len(nrow(y))) {
+        outp[x] <- t.test(y1[x,], y2[x,])$p.value
+    }
+    return(outp)
+}
+```
+
+Running under various conditions, and having a look at the type II error rate differences at a p-value threshold of 0.1%.
+We can see that the performances of _limma_ and the t-test are comparable, though the former is consistently better by a modest degree.
+This benefit erodes as the size of the groups or differences between groups increases.
+
+```{r}
+for (ngroups in 2:4) {
+    cat(sprintf("Number of groups is %i\n", ngroups))
+    for (nsize in c(20, 50, 100)) {
+        cat(sprintf("  Size of each group is %i\n", nsize))
+        g <- rep(seq_len(ngroups), each=nsize)
+
+        for (diff in c(0.5, 1, 2)) {
+            cat(sprintf("    Difference is %s\n", diff))
+            collected.limma <- collected.t <- numeric(5)
+
+            for (it in 1:5) {
+                y <- getY(g, diff=diff)
+                limma.p <- runLimma(g, y, c(1,2))
+                t.p <- runT(g, y, c(1,2))
+                collected.limma[it] <- mean(limma.p <= 0.001)
+                collected.t[it] <- mean(t.p <= 0.001)
+            }
+            cat(sprintf("      Limma = %.5g, T = %.5g\n", 
+                mean(collected.limma), mean(collected.t))) 
+        }
+    }
+}
+```
+
+Note that these simulations are showing _limma_ at its best, i.e., infinite prior d.f. for EB shrinkage.
+In practice, the estimated prior d.f. are lower (below 10, based on communications with Charlotte Soneson).
+So we can assume that the differences in performance would be even smaller in practice.
+
+# Comparison to _edgeR_
+
+The use of t-tests is questionable as the normality assumption is frequently violated.
+(Performance _tends_ to be satisfactory due to the violations cancelling out between the sample mean and variance; but don't try appealing to the CLT.)
+Count-based models would be preferable, aside from a few nagging problems:
+
+- They are at least an order of magnitude slower, which is exacerbated by the large number of cells.
+- The saddlepoint approximation fails at low counts and large dispersions, rendering quasi-likelihood p-values invalid.
+This was particularly problematic for earlier read count data, though it may be less of an issue for UMI data.
+
+```{r}
+library(edgeR)
+y <- matrix(rnbinom(10000*100, mu=0.1, size=1), ncol=100)
+dev <- nbinomDeviance(y, mean=matrix(0.1, nrow(y), ncol(y)), dispersion=1)
+
+# Observed moments of the deviance distribution.
+mean(dev)
+var(dev)
+
+# What they should be (100 d.f., as we're using the known mean).
+simdev <- rchisq(10000, df=100)
+mean(simdev)
+var(simdev)
+
+# And indeed, this is the case for more sane parameters.
+y <- matrix(rnbinom(10000*100, mu=100, size=10), ncol=100)
+dev <- nbinomDeviance(y, mean=matrix(100, nrow(y), ncol(y)), dispersion=0.1)
+mean(dev)
+var(dev)
+```
+
+-  They suffer from the same assumptions as linear models when fitted to the entire expression profile.
+Namely, they assume a constant dispersion and they are sensitive to cluster misspecification in the groups not being compared.
+
+It is fairly simple to run _edgeR_ separately, so I didn't consider the need to create a wrapper for the LRT-related methods.
+It would be easy to do so, though; simply modify _findMarkers_ to accept some function that returns p-values and log-fold changes given the data and a pair of groups.
