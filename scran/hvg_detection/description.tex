@@ -186,24 +186,37 @@ The $p$-value for this gene is defined as the upper tail probability at $F_g$ fo
 
 \section{Further comments}
 
-\subsection{Comparison to the Brennecke method}
-Our method uses the normalized log-expression values as $y_{ig}$, whereas the Brennecke method operates on the CV$^2$ values calculated from the (normalized) counts.
-The two methods are similar in terms of the number of HVGs detected in a variety of simulation scenarios (see \texttt{simulations/hvg} for examples).
-The main difference is that our method returns fewer false positives, possibly because (i) log-expression values are more normal-looking, and (ii) we account for variability of the true variances around the mean-variance trend.
-From a practical perspective, we favour log-values as this improves consistency with downstream procedures.
-Dimensionality reduction, clustering and visualization are all applied on the log-expression values.
-Indeed, the variance of the log-values provides a direct measure of the log-fold change between cells, which is arguably more relevant than the absolute differences in expression.
-
 \subsection{Filtering out low-abundance genes}
 At very low abundances, counts are limited to values of 0 or 1.
 This means that the log-expression values effectively follow a scaled binomial distribution, for which the relationship between the sample mean and variance estimate is exact.
 In other words, all low-abundance genes lie exactly on the empirical mean-variance trend with no scatter.
-When fitting $V(.)$, this understates the variance around the trend and leads to overestimation of $d_0$ for all other genes.
+When fitting $f(.)$, this understates the variance around the trend and leads to overestimation of $d_0$ for all other genes.
 The preponderance of low-abundance genes also interferes with span-based loess smoothing at higher abundances.
-For hypothesis testing, these low-abundance genes will never achieve large $F_g$ and thus will not be detected.
-Filtering of these genes should be performed prior to further analysis. 
-The simulations in \texttt{simulations/hvg} indicate that a threshold of 0.1 on the $\log_2(y_{ig}+1)$ mean should be used.
+Thus, filtering of these genes should be performed prior to trend fitting.
+The simulations in \texttt{simulations/sim\_filter.R} indicate that a threshold of 0.1 on the $\log_2(y_{ig}+1)$ mean should be used.
 Below this threshold, discreteness in the variance estimates begins to dominate.
+
+\subsection{Avoiding distributional assumptions}
+Currently, the above framework assumes normality for the log-expression values, which is probably unreasonable.
+The trend fitting is unlikely to be strongly affected as normality only affects $\Phi$, for which the estimate of $d_0$ can change to accommodate any non-normality.
+However, the $p$-value from the F-test is likely to be invalidated by strong non-normality.
+
+A better approach would be to take advantage of the central limit theorem for the variance estimates themselves.
+This would allow us to assume that $\hat\sigma^2_s|\sigma^2_s \sim \sigma^2_s N(1, \psi_0)$ for some sampling variance $\psi_0$.
+The use of the CLT should be possible as the variance estimates are simply the sum of squared residuals.
+(The lost degrees of freedom can effectively be ignored for large $n$ and small $p$.)
+We can model $\sigma^2_s \sim V'(A_s)N(1, \psi_1)$ for a mean-variance trend $V'(.)$, where $\psi_1$ represents the spread of true variances (equivalent to $d_0$).
+This would yield $\hat\sigma^2_s \sim V'(A_s)N(1, \psi_1 + \psi_0)$.
+
+$V'(.)$ can be easily fitted using a two-step procedure similar to that described above.
+One can imagine a parametric fit followed by a loess fit on the re-scaled variances.
+A log-transformation is not useful in this case, as $\Phi$ is not defined for a log-transformed normal variate.
+Fortunately, the rescaling should bring most values to unity, so negative fitted values should not be a concern.
+
+The more relevant aspect is the hypothesis testing.
+The null hypothesis for gene $g$ states that $\hat\sigma^2_g  \sim V'(A_g)N(1, \psi_1 + \psi_0)$, assuming that spike-ins and endogenous genes are comparable.
+While a $z$-test is the most obvious strategy here, it is also possible to use a one-sided $t$-test to account for the uncertainty of estimating $\psi_1 + \psi_0$.
+This seems to yield satisfactory type I error control in a variety of situations (see the results in \texttt{moresims/}).
 
 \bibliography{ref}
 \bibliographystyle{plainnat}
