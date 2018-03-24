@@ -1,7 +1,7 @@
 # This simulates HVGs associated with rare populations.
 
 library(scran)
-source("functions.R")
+source("../functions.R")
 
 set.seed(200)
 output.tab <- "results_rarepop.txt"

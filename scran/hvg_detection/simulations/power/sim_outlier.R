@@ -1,7 +1,7 @@
 # This simulates gene expression that are only present in one outlier cell.
 
 library(scran)
-source("functions.R")
+source("../functions.R")
 
 set.seed(200)
 output.tab <- "results_outlier.txt"

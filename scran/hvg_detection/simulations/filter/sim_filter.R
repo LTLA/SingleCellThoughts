@@ -1,5 +1,5 @@
 library(scran)
-source("functions.R")
+source("../functions.R")
 
 set.seed(200)
 ngenes <- 1000

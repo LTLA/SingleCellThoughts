@@ -2,7 +2,7 @@
 # two HVG detection methods in scran for detecting trajectories.
 
 library(scran)
-source("functions.R")
+source("../functions.R")
 
 set.seed(200)
 output.tab <- "results_trajectory.txt"
