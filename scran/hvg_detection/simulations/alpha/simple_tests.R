@@ -5,8 +5,6 @@
 library(matrixStats)
 ngenes <- 10000
 niters <- 10
-res.dir <- "results-simple"
-dir.create(res.dir, showWarning=FALSE)
 
 thresholds <- c(0.005, 0.01, 0.05)
 assessAlpha <- function(p) {
@@ -20,7 +18,7 @@ set.seed(20000)
 for (mode in c("ScaledPoisson", 
                "NegativeBinomial",
                "ZeroInflatedNB")) {
-    host.file <- file.path(res.dir, paste0(mode, ".tsv"))
+    host.file <- paste0(mode, ".tsv")
     overwrite <- TRUE 
 
     for (ncells in c(100, 200, 500)) {       
@@ -102,7 +100,7 @@ plotScenarios <- function(incoming, ncells) {
     for (it in seq_along(thresholds)) {
         to.use <- (seq_len(nmethods) - 1)*length(thresholds) + it
         heights <- t(all.means[,to.use])
-        x <- barplot(heights, ylab="Type I error rate", beside=TRUE)
+        x <- barplot(heights, ylab="Type I error rate", beside=TRUE, xlab="Simulation scenario")
         abline(h=thresholds[it], col="red", lwd=2, lty=2)
 
         se <- t(all.se[,to.use])
@@ -110,23 +108,24 @@ plotScenarios <- function(incoming, ncells) {
         segments(x, heights, x, upper)
         segments(x-0.2, upper, x+0.2, upper)
 
+        legend("topleft", fill=grey.colors(3), rownames(heights))
     }
 }
 
 for (ncells in c(100, 200, 500)) {      
-    pdf(file.path(res.dir, sprintf("ScaledPoisson%i.pdf", ncells)))
-    plotScenarios(file.path(res.dir, "ScaledPoisson.tsv"), ncells=ncells)
+    pdf(sprintf("ScaledPoisson%i.pdf", ncells), width=12)
+    plotScenarios("ScaledPoisson.tsv", ncells=ncells)
     dev.off()
 }
 
 for (ncells in c(100, 200, 500)) {      
-    pdf(file.path(res.dir, sprintf("NegativeBinomial%i.pdf", ncells)), width=12)
-    plotScenarios(file.path(res.dir, "NegativeBinomial.tsv"), ncells=ncells)
+    pdf(sprintf("NegativeBinomial%i.pdf", ncells), width=12)
+    plotScenarios("NegativeBinomial.tsv", ncells=ncells)
     dev.off()
 }
 
 for (ncells in c(100, 200, 500)) {     
-    pdf(file.path(res.dir, sprintf("ZeroInflatedNB%i.pdf", ncells)), width=12)
-    plotScenarios(file.path(res.dir, "ZeroInflatedNB.tsv"), ncells=ncells)
+    pdf(sprintf("ZeroInflatedNB%i.pdf", ncells), width=12)
+    plotScenarios("ZeroInflatedNB.tsv", ncells=ncells)
     dev.off()
 }
