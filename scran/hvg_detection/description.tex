@@ -41,7 +41,7 @@ Without it, the trend would be pretty extreme and difficult to fit reliably, esp
 
 \section{Linear modelling of expression values}
 Here we describe the basic process of variance estimation.
-Let $y_{ig}$ be the expression value of gene $g$ in cell $i$.
+Let $y_{ig}$ be the (log-)expression value of gene $g$ in cell $i$.
 Denote the vector of expression values across all cells for $g$ as $\bm{y}_g$, with length equal to the number of cells $n$.
 Assume that this can be expressed as a linear sum of $p$ predictors
 \[
@@ -94,6 +94,8 @@ From these two expressions, we obtain
 which allows us to estimate $d_0$ and $V(.)$ from the observed distribution of $\hat\sigma^2_s$.
 
 \section{Estimating the distribution parameters}
+
+\subsection{Overview}
 To estimate the parameters of the $\sigma^2_s$ distribution, we fit a trend $f(.)$ to $\log(\hat\sigma^2_s)$ against $A_s$.
 We use log-transformed values as $\exp[f(.)]$ guarantees positive values for $V(.)$.
 The fitted value of the trend for each $s$ is an estimate of the expectation of the log-values for genes with similar $A_s$, denoted as
@@ -105,19 +107,36 @@ Dividing $\hat\sigma^2_s$ by $\exp[f(A_s)]$ yields a scaled F-distribution indep
     \frac{\hat\sigma^2_s}{\exp[f(A_s)]} \sim \Phi F(n-p, d_0) \;,
 \]
 where $\Phi = \exp(E\{\log[F(n-p, d_0)]\})^{-1}$. 
-Both $d_0$ and $\Phi$ can therefore be determined by robustly fitting an F-distribution to the above ratios \citep{phipson2016robust}.
+Both $d_0$ and $\Phi$ can therefore be determined by robustly fitting an F-distribution to the above ratios \citep{phipson2016robust}, using the \texttt{fitFDistRobustly} function.
 Multiplication of $\exp[f(.)]$ with $\Phi$ then yields an estimate of $V(.)$.
 
+\subsection{Prefitting with a parametric curve}
 In practice, we use a two-step procedure to fit $f(.)$.
 The first step uses a parametric curve that models the distinct shape of the mean-variance relationship for log-expression values in scRNA-seq data.
-Consider the following function
+This curve in the variance is defined with respect to the mean $x$ with the function
 \begin{equation}
     f_1(x) = \frac{A x}{x^M + B} \label{eqn:paramtrend}
 \end{equation}
 with $A > 0$, $M > 1$ and $B > 0$.
-We use least-squares optimization to fit $f_1(.)$ to $\hat\sigma^2_s$ against $A_s$.
 We chose this function as it captures major features of the mean-variance trend including a linear increase from zero at low $x$, a smooth peak at moderate $x$ and an asymptotic decrease to zero as $x \to \infty$.
-In the second step, we compute
+
+We use non-linear least-squares optimization to fit $f_1(.)$ to $\hat\sigma^2_s$ against $A_s$.
+Sensible starting values for each parameter are obtained as follows:
+\begin{enumerate}
+\item The approximate location ($\hat{x}_m$) and height ($\hat{y}_m$) of the peak in the curve is obtained by fitting a loess smoother to $\sigma^2_s$.
+\item The initial gradient $\hat{g}$ is obtained by fitting a line to the variances for spike-ins where $A_s$ is between $\hat{x}_m/2$ and the minimum $A_s$ across all spike-ins.
+The use of this subset of spike-ins avoids the non-linearity as the curve approaches the peak.
+\item Near zero, Equation~\ref{eqn:paramtrend} becomes $Ax/B$ when $M>1$ and $B>0$. 
+Thus, if $B$ is known, $A$ can be computed by multiplying $B$ with $\hat{g}$.
+\item The stationary point at Equation~\ref{eqn:paramtrend} occurs when $x^M = B/(M-1)$.
+This allows us to solve for $B$ when $M$ is known, by replacing $x$ with our estimate of the peak location $\hat{x}_m$.
+\item In theory, the height of the peak could be used to solve for $M$. 
+However, this seems unstable in practice, so instead a grid search is used to identify the $M$ (and subsequently the $B$, and therefore the $A$) that minimizes the sum of squares.
+\end{enumerate}
+The resulting values of $M$, $A$ and $B$ are used in the \texttt{nls} function to refine the curve fit.
+Searching is performed in the log-space to ensure that the constraints on $A$, $M$ and $B$ are respected.
+
+In the second step, we remove most of the effect of the mean-variance curve by computing 
 \[
     r_s = \hat\sigma^2_s/f_1(A_s) \;.
 \]
@@ -125,8 +144,10 @@ We then fit a robust loess curve $f_2(.)$ to $\log(r_s)$ against $A_s$, and defi
 \[
     f(A_s) = \log[f_1(A_s)] + f_2(A_s)
 \]
-The second fit accounts for any variations from the relationship in Equation~\ref{eqn:paramtrend}, and also reduces the effect of any outliers.
-However, this is done \textit{after} factoring out $f_1(A_s)$, because a complex trend with strong gradients is difficult to fit directly with smoothing algorithms.
+The second fit accounts for empirical variations from the relationship in Equation~\ref{eqn:paramtrend} and reduces the effect of any outliers.
+It also ensures that the fit is ultimately determined by the sum of squares in the log-space, consistent with the original definition of $f(.)$ fitted to the log-variances.
+The use of a two-step protocol is necessary because a complex trend with strong gradients is difficult to fit directly with smoothing algorithms.
+By first using a parametric curve to model the complex parts of the trend, we can factor out the strong gradients to improve the accuracy of the loess smoothing.
 
 \section{Modelling the technical noise for endogenous genes}
 Consider an endogenous gene $g$, which has a true expression of $y_{ig}^*$ in cell $i$.
@@ -140,9 +161,9 @@ The observed variance is
 Denote $E[\mbox{var}(y_{ig}|y_{ig}^*)]$ as $\sigma^2_{(t)g}$.
 For a gene with abundance $A_g$, we estimate $\sigma^2_{(t)g}$ from the corresponding control genes.
 Specifically, we use the expectation of $\sigma^2_s$ at this abundance (Equation~\ref{eqn:estdist}), i.e., 
-\[
+\begin{equation}
     \hat\sigma^2_{(t)g} \approx E_{|A_g}[\sigma^2_s] = \frac{d_0V(A_g)}{d_0-2} \;. \label{eqn:techest}
-\]
+\end{equation}
 We can simply obtain an estimate of the biological component as
 \[
     \hat\sigma^2_{(b)g} = \hat\sigma^2_g - \hat\sigma^2_{(t)g} \;,
