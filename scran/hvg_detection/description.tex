@@ -186,6 +186,25 @@ The $p$-value for this gene is defined as the upper tail probability at $F_g$ fo
 
 \section{Further comments}
 
+\subsection{Comparison to the Brennecke method}
+Our method uses the normalized log-expression values as $y_{ig}$, whereas the Brennecke method operates on the CV$^2$ values calculated from the (normalized) counts.
+Both methods are similar with respect to correctly identifying genes above the trend (see \texttt{simulations/power/above\_*}).
+Their associated hypothesis tests are also similar in terms of the number of HVGs detected in a variety of simulation scenarios (see \texttt{simulations/power/detect\_*}).
+The main differences are:
+\begin{itemize}
+\item Our method returns fewer false positives, possibly because log-expression values are somewhat more normal-looking. 
+Better modelling the variability of the true variances around the mean-variance trend is probably not a factor as all $d_0$ estimates seem to be infinite.
+\item Our method is better than the Brennecke method for detecting rare populations characterized by downregulation of genes.
+This is attributable to the fact that decreasing the mean increases the technical CV$^2$, making it harder to observe an increase in the biological CV$^2$.
+\item The Brennecke method is better at detecting HVGs that drive weak differences between small clusters, independent of its anticonservativeness (look at the top genes).
+This is probably because a fold-increase has less effect on the variance after a log-transformation.
+\end{itemize}
+
+From a practical perspective, we favour log-values as this improves consistency with downstream procedures.
+Dimensionality reduction, clustering and visualization are all applied on the log-expression values.
+Selecting HVGs on a different metric may lead to inconsistencies if they are not also highly variable in the log-space.
+For example, an outlier-driven HVG selected with a large CV$^2$ looks underwhelming when visualized with log-expression values.
+
 \subsection{Filtering out low-abundance genes}
 At very low abundances, counts are limited to values of 0 or 1.
 This means that the log-expression values effectively follow a scaled binomial distribution, for which the relationship between the sample mean and variance estimate is exact.
