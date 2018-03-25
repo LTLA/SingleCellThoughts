@@ -4,7 +4,8 @@ library(scran)
 source("../functions.R")
 
 set.seed(200)
-output.tab <- "results_rarepop.txt"
+detect.tab <- "detect_rarepop.txt"
+above.tab <- "above_rarepop.txt"
 new.file <- TRUE
 ngenes <- 1000
 ncells <- 500
@@ -25,18 +26,22 @@ for (scenario in c("up", "down")) {
             scaling[chosen.genes, -seq_len(subpop)] <- fold
         }
 
-        collected <- vector("list", 20)
+        collected.d <- collected.a <- vector("list", 20)
         for (it in seq_len(20)) {
             sim.genes <- sampleCounts(ngenes=ngenes, nsamples=ncells, scaling=scaling)
             sim.spikes <- sampleCounts(ngenes=nspikes, nsamples=ncells, scaling=1)
             counts <- rbind(sim.genes, sim.spikes)
             is.spike <- seq_len(nspikes) + ngenes
-            my.env <- detectHVGs(counts, is.spike)
-            collected[[it]] <- my.env$output
+
+            my.env <- detectHVGs(counts, is.spike, chosen.genes)
+            collected.d[[it]] <- my.env$output
+            collected.a[[it]] <- my.env$above
         }
 
-        write.table(data.frame(Direction=scenario, FC=fold, rbind(colMeans(do.call(rbind, collected)))),
-                    file=output.tab, append=!new.file, col.names=new.file, row.names=FALSE, sep="\t", quote=FALSE)
+        write.table(data.frame(Direction=scenario, FC=fold, rbind(colMeans(do.call(rbind, collected.d)))),
+                    file=detect.tab, append=!new.file, col.names=new.file, row.names=FALSE, sep="\t", quote=FALSE)
+        write.table(data.frame(Direction=scenario, FC=fold, rbind(colMeans(do.call(rbind, collected.a)))),
+                    file=above.tab, append=!new.file, col.names=new.file, row.names=FALSE, sep="\t", quote=FALSE)
         new.file <- FALSE
     }
 }
