@@ -200,10 +200,12 @@ This is attributable to the fact that decreasing the mean increases the technica
 This is probably because a fold-increase has less effect on the variance after a log-transformation.
 \end{itemize}
 
-From a practical perspective, we favour log-values as this improves consistency with downstream procedures.
+From a practical perspective, we prefer computing the variance of log-values as this improves consistency with downstream procedures.
 Dimensionality reduction, clustering and visualization are all applied on the log-expression values.
 Selecting HVGs on a different metric may lead to inconsistencies if they are not also highly variable in the log-space.
 For example, an outlier-driven HVG selected with a large CV$^2$ looks underwhelming when visualized with log-expression values.
+Another example is provided in \texttt{simulations/power/sim\_comp.R}, where detection power differs between methods at high and low abundances.
+The use of Brennecke's method would favour genes that have low biological components in the log-space, reducing discriminatory power in the presence of technical noise.
 
 \subsection{Filtering out low-abundance genes}
 At very low abundances, counts are limited to values of 0 or 1.
