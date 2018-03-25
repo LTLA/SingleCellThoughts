@@ -17,7 +17,7 @@ assessPCA <- function(observed, truth) {
 #    estimated.contrib <- cumsum(flipped.prog.var) + flipped.prog.var * (npcs:1 - 1L)
 #    estimated.contrib <- rev(estimated.contrib)
 #    retained <- min(which(tech.var > estimated.contrib))
-    retained <- npcs - min(which(cumsum(prog.var) > tech.var)) + 1
+    retained <- scran:::.get_npcs_to_keep(prog.var, tech.var)
 
     # These aren't quite right, they only approximate the two components.
     ps.bio.pos <- t(truth - x$center) %*% x$rotation 
