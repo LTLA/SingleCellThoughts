@@ -144,11 +144,19 @@ The mean-variance relationship is quite different for normalized counts derived 
 this will affect the accuracy of any permutation test, even for the first eigenvalue where the proportion is ostensibly interpretable as a $p$-value.
 
 \section{Simulation results}
-In the simulations in \verb!simulations/pca!, over 99\% of the technical noise is removed in most scenarios.
-At least 80\% of the biological variance is usually retained, though this depends on the scenario.
-Worst performance is generally observed where the biological separation between subpopulations is weak;
-the number of subpopulations is high relative to the number of cells; or the number of genes involved is low.
-This represents the expected consequences of strong violations of our assumption of zero technical noise in the first $k$ PCs.
-Arguably, though, such cases are challenging for any dimensionality reduction technique.
+We assessed the performance of our two methods using simulated data with known clusters (see \texttt{simulations/}).
+For each pair of clusters, we quantified their separation in the PC space of the chosen dimensions,
+by computing the proportion of variance explained (PVE) by the cluster identity (only using cells in that pair of clusters).
+We compared methods in terms of their ability to separate all pairs of clusters, using the smallest PVE;
+and their average cluster separation, using the median PVE.
+
+The two methods are generally similar in behaviour, though parallel analysis retains more PCs than the technical noise-based method in noisy data sets.
+Parallel analysis yields larger minimum PVEs due to the retention of later PCs that capture weak differences between poorly-separated clusters.
+However, the average cluster separation is often poorer, probably due to the retention of more random noise with later PCs.
+Both methods are better than using all PCs in most simulation scenarios.
+Whether average or minimum separation should be maximized depends on the intended resolution of the study.
+
+We note that, in practice, the technical noise-based method is much more convenient, requiring only an estimate of the technical noise for each gene.
+It is time-consuming to repeat PCAs for sufficient permutations to characterize the distribution of $\omega^2_l$, especially for large matrices.
 
 \end{document}
