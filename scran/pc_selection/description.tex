@@ -27,10 +27,15 @@ Aaron T. L. Lun\textsuperscript{1,*}
 
 \end{flushleft}
 
-\section{Description of method}
+\section{Overview}
 Principal components analysis (PCA) is usually performed to obtain a small set of principal components (PCs) for use in clustering and dimensionality reduction.
 The aim is to reduce the random technical noise while preserving the biological signal in the first few PCs.
-Decreasing the number of dimensions also reduces computational work, which is especially important for some algorithms.
+Decreasing the number of dimensions also reduces computational work, which is especially important for some algorithms, e.g., $k$-nearest neighbour searching.
+The challenge here is how to choose an appropriate number of PCs.
+
+\section{Based on technical noise}
+
+\subsection{Description of method}
 
 We assume that the biological signal is wholly captured by the first few PCs.
 This is based on the fact that biological processes will generate non-zero covariance between multiple genes that are involved in those processes.
@@ -61,9 +66,7 @@ This ensures that there is some value of $k \in [1, N]$ that will satisfy the ab
 It also reduces random noise that can skew the loading vectors for the first PCs if the biological signal is weak.
 However, it likely will result in some overestimation of the biological noise and of $k$.
 
-\section{Why a lower bound?} 
-
-\subsection{Justification}
+\subsection{Justifying the lower bound} 
 The choice of $k$ is a lower bound as it assumes that the first $k$ PCs contain \textit{only} biological variability.
 However, even for the earliest PCs, the loading vector will capture some aspect of the technical noise that happens to be parallel to the biological subspace.
 This means that the variance explained by these PCs will contain a non-zero technical component.
@@ -74,7 +77,7 @@ This means that the earlier PCs tend to have the largest technical components, e
 Such an effect will increase the discrepancy between our choice of $k$ and the ``true'' number of PCs that needs to be retained to preserve the biological variability.
 Of course, it is debatable whether obtaining the true number of PCs is desirable for noisy data, as this will reduce the effectiveness of denoising and dimensionality reduction. 
 
-\subsection{Alternative}
+\subsection{An alternative for a tighter bound}
 If we weaken the assumption that the technical component is zero in the first $k$ PCs, we might obtain a more suitable choice for the number of PCs.
 Assume that the first $k$ PCs contain the entirety of the biological signal, but also contribute at least
 \[
@@ -99,6 +102,47 @@ This is because the gradient with respect to $k$ of the LHS of the above inequal
 For the most extreme case where all $s^2_l$ are very similar, we could obtain near-identical LHS values for a range of $k$.
 By comparison, the original approach has a LHS that is supralinear with respect to $k$, such that a well-defined choice of $k$ can be obtained for any $\sigma^2_t$.
 
+\subsection{Use with multi-batch experiments}
+This method can still be applied on batch-corrected data provided that an overall estimate of the technical component is available.
+Such an estimate can be obtained using the \texttt{combineVar} function after modelling the mean-variance trend within each batch, 
+e.g., to account for differences in spike-in abundance across batches.
+Another requirement is that the batch correction does not change the residuals within each batch.
+Any such distortion of the residuals this would alter the variance estimate, and thus the contribution of technical noise in the corrected data.
+Acceptable batch correction methods include simple linear regression (via \texttt{removeBatchEffect}) without any empirical Bayes shrinkage of the variances;
+or \texttt{mnnCorrect} with a large \texttt{sigma} to enforce the use of global correction vectors.
+
+\section{With parallel analysis}
+Horn's parallel analysis involves permuting each row of the input gene expression matrix and performing PCA on this permuted matrix.
+This yields a variance explained for each PC, denoted as $\omega^2_l$ for this permuted matrix.
+Any PC with a $\sigma^2_l$ (from the original input matrix) comparable to $\omega^2_l$ is considered to be uninteresting, 
+as the PC explains no more variance than expected under a random model containing no structure. 
+One can visualize this strategy by considering a scree plot and discarding all PCs past the first intersection of the ``variance explained'' lines for the original and permuted PCAs.
+
+Several definitions of ``comparable'' can be used to define the first uninteresting PC.
+The simplest is to remove all PCs past and including the first PC where $\sigma^2_l < \omega^2_l$.
+However, this tends to retain too many PCs in noisy datasets where the original and permuted variance-explained curves are similar and intersect slowly.
+Another solution is to repeat the permutations many times, and define the threshold as an upper quantile of $\omega^2_l$ for each $l$.
+A PC with $\sigma^2_l$ below this quantile is considered to be feasibly sampled from the distribution of $\omega^2_l$ under a random model, and is subsequently discarded.
+We use the 90\textsuperscript{th} percentile by default, which yields a more conservative estimate of the number of PCs.
+
+It is tempting to rephrase the quantile-based methodology in terms of $p$-values. 
+Specifically, we could compute a ``$p$-value'' for each PC as the proportion of iterations where $\omega^2_l \ge \sigma^2_l$.
+However, this is not correct.
+Permutations generate a null model of global randomness, which means that the proportion of iterations is \textit{only} interpretable as a $p$-value for the first PC.
+The tests for later PCs do not involve an appropriate null hypothesis when the null is already rejected for the first PC.
+Indeed, in the presence of structure, $\omega^2_l$ is always systematically larger than $\sigma^2_l$ at later PCs.
+This guarantees intersection of the two variance-explained curves but results in $p$-values for the later PCs that are heavily skewed towards 1, 
+even if the later PCs do not capture any structure (and thus should correspond to true nulls).
+Obtaining a suitable test for PC $l$ would involve permuting the matrix in a manner that preserves the basis vectors that contribute to PCs $\{1, \ldots, l-1\}$; this is not easy.
+
+Additional practical factors complicate the use of the proportions as $p$-values.
+One is the need for multiple testing correction across PCs.
+This is not straightforward as later PCs are never tested if the null is accepted for an earlier PC.
+The exact number of tests is not always the same, nor are they independent. 
+Another complication is that normalized counts from libraries of different sizes are not exchangeable via permutation.
+The mean-variance relationship is quite different for normalized counts derived from small or large libraries; 
+this will affect the accuracy of any permutation test, even for the first eigenvalue where the proportion is ostensibly interpretable as a $p$-value.
+
 \section{Simulation results}
 In the simulations in \verb!simulations/pca!, over 99\% of the technical noise is removed in most scenarios.
 At least 80\% of the biological variance is usually retained, though this depends on the scenario.
@@ -106,22 +150,5 @@ Worst performance is generally observed where the biological separation between 
 the number of subpopulations is high relative to the number of cells; or the number of genes involved is low.
 This represents the expected consequences of strong violations of our assumption of zero technical noise in the first $k$ PCs.
 Arguably, though, such cases are challenging for any dimensionality reduction technique.
-
-\section{Further comments}
-It is difficult to apply this approach exactly in multi-batch experiments where the technical noise must be modelled separately in each batch.
-This may be because a different set of spike-ins were added, or the same spike-in set was used at a different concentration.
-It may not be possible to obtain a single trend for the technical noise in the combined data, especially as batch correction usually only adjusts the mean and not the variance.
-Nonetheless, it is still possible to use our approach to determine, roughly, the number of PCs to retain in the combined data set.
-We determine the number of PCs to retain in each batch, and we take the average across batches as the number of PCs to retain in the combined data set.
-Here, we assume that batches share the biological subspace, so the loading vectors are similar across batches.
-Obviously, this is not exact but it provides a rough guideline for distinguishing between technical and biological noise.
-
-% One can be fairly sanguine about this; feature selection for data exploration doesn't require a great deal of stringency.
-% As long as we can get a rough idea of what is "sensible", that is good enough.
-% Sure, we might toss out some biology at the later PCs, but the results will be dominated by the earlier PCs anyway.
-% Moreover, using all PCs will leave in a lot of technical noise that runs the risk of obscuring subtle biological effects.
-%
-% One alternative is to do the PCA, obtain a low-rank approximation and use that for batch correction.
-% However, I'm not sure about doing so in case the low-rank approximation discards some biology and results in spurious differences between batches.
 
 \end{document}
