@@ -39,25 +39,17 @@ assessPCA <- function(observed, clusters, ids) {
 #    retained <- min(which(tech.var > estimated.contrib))
 
     # Using our denoising approach, or parallel analysis.
-    approximate <- ncol(observed)>=500
     denoised <- scran:::.get_npcs_to_keep(prog.var, tech.var)
-    parallel <- parallelPCA(observed, BPPARAM=MulticoreParam(3), value="n", approximate=approximate, 
-                            min.rank=1, niter=50, keep.perm=TRUE)
+    approximate <- ncol(observed)>=500
+    parallel <- parallelPCA(observed, BPPARAM=MulticoreParam(3), value="n", approximate=approximate, min.rank=1)
 
-    null <- attr(parallel, "permuted.percentVar")
-    obs <- attr(parallel, "percentVar")
-    p.val <- (colSums(t(t(null) > obs)) + 1)/(nrow(null)+1L) # using the Phipson/Smyth definition for permutation p-values.
-    ref.parallel <- max(1L, min(which(p.val > 0.05)) - 1L)
-                
     # Assessing each method.
     d.res <- assessSeperation(denoised, x$x, ids)
     p.res <- assessSeperation(parallel, x$x, ids)
-    r.res <- assessSeperation(ref.parallel, x$x, ids)
     n.res <- assessSeperation(ncol(x$x), x$x, ids)
 
     return(list(N.denoised=denoised, Worst.denoised=d.res["Worst"], Median.denoised=d.res["Median"],
                 N.parallel=parallel, Worst.parallel=p.res["Worst"], Median.parallel=p.res["Median"],
-                N.ref=ref.parallel, Worst.ref=r.res["Worst"], Median.ref=r.res["Median"],
                 N.none=ncol(x$x), Worst.none=n.res["Worst"], Median.none=n.res["Median"]))
 }
 
@@ -65,8 +57,8 @@ out.tab <- "results_pca.txt"
 new.file <- TRUE
 set.seed(191919191)
 
-for (ncells in c(200, 500, 1000)) {
-    for (ngenes in c(1000, 2000, 5000)) {
+for (ncells in c(200, 1000)) {
+    for (ngenes in c(1000, 5000)) {
         for (affected in c(0.2, 0.5, 1)) { 
             for (npops in c(5, 10, 20)) { 
                 for (sd in c(0.2, 0.5, 1)) { 
