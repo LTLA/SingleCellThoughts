@@ -124,8 +124,8 @@ We use non-linear least-squares optimization to fit $f_1(.)$ to $\hat\sigma^2_s$
 Sensible starting values for each parameter are obtained as follows:
 \begin{enumerate}
 \item The approximate location ($\hat{x}_m$) and height ($\hat{y}_m$) of the peak in the curve is obtained by fitting a loess smoother to $\sigma^2_s$.
-\item The initial gradient $\hat{g}$ is obtained by fitting a line to the variances for spike-ins where $A_s$ is between $\hat{x}_m/2$ and the minimum $A_s$ across all spike-ins.
-The use of this subset of spike-ins avoids the non-linearity as the curve approaches the peak.
+\item The initial gradient $\hat{g}$ is obtained by fitting a line to the variances for controls where $A_s$ is between $\hat{x}_m/2$ and the minimum $A_s$ across all controls.
+The use of this subset of controls avoids the non-linearity as the curve approaches the peak.
 \item Near zero, Equation~\ref{eqn:paramtrend} becomes $Ax/B$ when $M>1$ and $B>0$. 
 Thus, if $B$ is known, $A$ can be computed by multiplying $B$ with $\hat{g}$.
 \item The stationary point at Equation~\ref{eqn:paramtrend} occurs when $x^M = B/(M-1)$.
@@ -150,6 +150,8 @@ The use of a two-step protocol is necessary because a complex trend with strong 
 By first using a parametric curve to model the complex parts of the trend, we can factor out the strong gradients to improve the accuracy of the loess smoothing.
 
 \section{Modelling the technical noise for endogenous genes}
+
+\subsection{Decomposing the variance components}
 Consider an endogenous gene $g$, which has a true expression of $y_{ig}^*$ in cell $i$.
 Let $\mbox{var}(y_{ig}^*) = \sigma^2_{(b)g}$, representing the underlying biological variation.
 The observed expression $y_{ig}$ is then sampled from $y_{ig}|y_{ig}^* \sim T_{ig}$ with $E(T_{ig}) = y^*_{ig}$, representing the effect of technical noise.
@@ -170,19 +172,37 @@ We can simply obtain an estimate of the biological component as
 \]
 allowing the observed variance to be decomposed to its biological and technical components.
 
-Using the variance of the control genes assumes that, at the very least, $\mbox{var}(y_{ig}|y_{ig}^*) = \mbox{var}(y_{is})$ when $E(y_{is}) = y_{ig}^*$, i.e., the sampling noise is the same for control and endogenous genes at the same expression level.
-The quality of the approximation in Equation~\ref{eqn:techest} also depends on how $\mbox{var}(y_{ig}|y_{ig}^*)$ changes as a function of $y^*_{ig}$.
-If it does not change, the expression is exact; however, this unlikely to be the case as the sampling noise for counts will depend on the mean.
-The approximation is less likely to be accurate if there are strong changes with respect to $y_{ig}^*$ \textit{and} the variance of $y_{ig}^*$ across cells is high.
-Nonetheless, this approach is still a useful approximation for modelling technical noise.
-
-Finally, to detect highly variable genes, our null hypothesis is that all endogenous genes have variance estimates that are distributed according to Equation~\ref{eqn:estdist}.
-Highly variable genes are detected by rejecting this null hypothesis with a one-sided $F$-test.
-For an endogenous gene $g$, we compute
+\subsection{Detecting highly variable genes}
+Our null hypothesis for endogenous gene $g$ is that its variance estimate is distributed according to Equation~\ref{eqn:estdist}.
+We test this null hypothesis with a one-sided $F$-test.
+Specifically, we compute
 \[
     F_g = \frac{\hat\sigma^2_g}{V(A_g)} \;.
 \]
-The $p$-value for this gene is defined as the upper tail probability at $F_g$ for an $F$-distribution with $n-p$ and $d_0$ degrees of freedom.
+The $p$-value for this gene is the upper tail probability at $F_g$ for an $F$-distribution with $n-p$ and $d_0$ degrees of freedom.
+Highly variable genes are then defined at a false discovery rate threshold.
+
+\subsection{Assumptions when comparing controls and endogenous genes}
+Using the variance of the control genes assumes that, at the very least, $\mbox{var}(y_{ig}|y_{ig}^*) = \mbox{var}(y_{is})$ when $E(y_{is}) = y_{ig}^*$, 
+i.e., the sampling noise is the same for control and endogenous genes at the same expression level.
+The strength of this assumption depends on the properties of the control genes.
+
+The quality of the approximation in Equation~\ref{eqn:techest} depends on how strongly $\mbox{var}(y_{ig}|y_{ig}^*)$ changes as a function of $y^*_{ig}$.
+If it does not change, the expression is exact; however, this unlikely to be the case as the sampling noise for counts will depend on the mean.
+The approximation is also less likely to be accurate if there are strong changes with respect to $y_{ig}^*$ \textit{and} the variance of $y_{ig}^*$ across cells is high.
+Nonetheless, this approach still provides a useful approximation for modelling technical noise.
+
+It is also critical that the average abundances of the control and endogenous genes are comparable.
+This is not straightforward as different size factors are used for the two sets of genes prior to calculation of log-normalized expression values.
+Size factors only have a relative interpretation within each set, and there is no general rationale for adjusting size factors between sets.
+To resolve this, we assume that the magnitude of the underlying counts drives the mean-variance relationship.
+Thus, control or endogenous genes with the same average count should have the same average abundances.
+We center both sets of size factors so that $E(y_{is}/f'_i) \approx E(y_{ig}/f_i)$ if $E(y_{is})=E(y_{ig})$ for spike-in size factor $f'_i$ and endogenous size factor $f_i$ (assuming size factors are known and accurate representations of the scaling bias).
+This yields similar values upon taking the mean of the log-normalized expression.
+
+Of course, with the benefit of hindsight, we should have scaled the size factors so that the mean of the reciprocal size factors were the same.
+We should have also used the log-transformed mean normalized count as the covariate, as averaging over the log-values does not maintain equivalence in the average abundances.
+We did not do so initially as this complicated the interface considerably.
 
 \section{Handling uninteresting factors of variation}
 
@@ -195,14 +215,14 @@ However, we take the fitted value at the the overall average instead, which is n
 
 \subsection{Computing batch-specific statistics}
 A better strategy is to compute variances and average abundances separately for each batch.
-This is first performed for the spike-in transcripts, yielding $\sigma^2_{s,b}$ and $A_{s,b}$ for the sample variance and mean of spike-in $s$ in batch $b$.
+This is first performed for the control genes, yielding $\sigma^2_{s,b}$ and $A_{s,b}$ for the sample variance and mean of control $s$ in batch $b$.
 Estimates for all $(s, b)$ combinations are pooled together and a single trend is fitted to the variances against the mean.
 Next, we repeat this process for all genes, yielding $\sigma^2_{g,b}$ and $A_{g,b}$ for each gene and batch.
 The fitted value of the trend at $A_{g,b}$ is used as the batch-specific technical component, which is subtracted from $\sigma^2_{g,b}$ to obtain a batch-specific biological component.
 Weighted averages are then calculated to obtain a single estimate per gene, where weighting is performed based on the number of cells (for abundance) or residual d.f. (for variance components) per batch.
 
 The obvious benefit of this strategy is that it accommodates differences in the batch-specific technical noise.
-It also protects against \textit{random} shifts in the average abundance of each spike-in transcript due to a batch effect.
+It also protects against \textit{random} shifts in the average abundance of each control gene due to a batch effect.
 In contrast, had we used a linear model, we would effectively be fitting to data where both abundance and variance are averaged across batches.
 This would only be correct if the trend were linear, which it is not;
 or if the batch effect is small, in which case we would not need to bother modelling it.
@@ -226,7 +246,7 @@ In such cases, the only option is to split the dataset into its constituent batc
 This uses a batch-specific trend fit, which avoids distorted estimates of the technical noise in each batch.
 Combining of batch-specific statistics for each gene is done using the same approach described above, i.e., weighted averages for variances and abundances, Fisher's method for $p$-values.
 
-One of the most common causes of differences in the trend is scaling normalization when the coverage of spike-in or endogenous genes differs systematically between batches.
+One of the most common causes of differences in the trend is scaling normalization when the coverage of control or endogenous genes differs systematically between batches.
 Consider a dataset containing two batches, where the second batch was sequenced to twice the depth of the first.
 Further assume that there are no other biases in this dataset and that sequencing is the only source of variability. 
 Using batch-specific statistics on the log-counts (without any normalization), the same mean-variance trend would manifest in both batches,
@@ -294,7 +314,7 @@ Nonetheless, the differences are likely to be small, and in practice, fitting a 
 A log-transformation is not possible with this approach as the expectation of a log-transformed normal variate does not exist (and thus cannot be used to adjust the scale).
 
 The more relevant point is to see whether hypothesis testing is improved.
-The null hypothesis for gene $g$ states that $\hat\sigma^2_g  \sim V'(A_g)N(1, \psi_1 + \psi_0)$, assuming that spike-ins and endogenous genes are comparable.
+The null hypothesis for gene $g$ states that $\hat\sigma^2_g  \sim V'(A_g)N(1, \psi_1 + \psi_0)$, assuming that control and endogenous genes are comparable.
 While a $z$-test is the most obvious strategy here, it is also possible to use a one-sided $t$-test to account for the uncertainty of estimating $\psi_1 + \psi_0$.
 This seems to yield satisfactory type I error control in a variety of situations (see the results in \texttt{simulations/alpha/}).
 
