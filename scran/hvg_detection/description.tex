@@ -200,9 +200,8 @@ Thus, control or endogenous genes with the same average count should have the sa
 We center both sets of size factors so that $E(y_{is}/f'_i) \approx E(y_{ig}/f_i)$ if $E(y_{is})=E(y_{ig})$ for spike-in size factor $f'_i$ and endogenous size factor $f_i$ (assuming size factors are known and accurate representations of the scaling bias).
 This yields similar values upon taking the mean of the log-normalized expression.
 
-Of course, with the benefit of hindsight, we should have scaled the size factors so that the mean of the reciprocal size factors were the same.
-We should have also used the log-transformed mean normalized count as the covariate, as averaging over the log-values does not maintain equivalence in the average abundances.
-We did not do so initially as this complicated the interface considerably.
+Of course, with the benefit of hindsight, we should have used the log-transformed mean normalized count as the covariate.
+This is because the expectation of the log-values may not be the same between control and endogenous genes, even if their expected normalized counts were equal.
 
 \section{Handling uninteresting factors of variation}
 
