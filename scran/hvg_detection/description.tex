@@ -184,6 +184,65 @@ For an endogenous gene $g$, we compute
 \]
 The $p$-value for this gene is defined as the upper tail probability at $F_g$ for an $F$-distribution with $n-p$ and $d_0$ degrees of freedom.
 
+\section{Handling uninteresting factors of variation}
+
+\subsection{Blocking in a linear model}
+The most obvious approach is to compute the residual variance from a linear model that blocks on unwanted factors of variation.
+However, this is not sufficient as it fails to consider the effect of those factors on the average abundance.
+Consider a situation with a batch effect that increases the expression of gene $g$ in the second batch.
+The technical component for $g$ should be a (weighted) average of the fitted value of the trend at the batch-specific average abundances.
+However, we take the fitted value at the the overall average instead, which is not guaranteed to be equivalent or even similar.
+
+\subsection{Computing batch-specific statistics}
+A better strategy is to compute variances and average abundances separately for each batch.
+This is first performed for the spike-in transcripts, yielding $\sigma^2_{s,b}$ and $A_{s,b}$ for the sample variance and mean of spike-in $s$ in batch $b$.
+Estimates for all $(s, b)$ combinations are pooled together and a single trend is fitted to the variances against the mean.
+Next, we repeat this process for all genes, yielding $\sigma^2_{g,b}$ and $A_{g,b}$ for each gene and batch.
+The fitted value of the trend at $A_{g,b}$ is used as the batch-specific technical component, which is subtracted from $\sigma^2_{g,b}$ to obtain a batch-specific biological component.
+Weighted averages are then calculated to obtain a single estimate per gene, where weighting is performed based on the number of cells (for abundance) or residual d.f. (for variance components) per batch.
+
+The obvious benefit of this strategy is that it accommodates differences in the batch-specific technical noise.
+It also protects against \textit{random} shifts in the average abundance of each spike-in transcript due to a batch effect.
+In contrast, had we used a linear model, we would effectively be fitting to data where both abundance and variance are averaged across batches.
+This would only be correct if the trend were linear, which it is not;
+or if the batch effect is small, in which case we would not need to bother modelling it.
+We avoid such problems by fitting the trend to the batch-specific values.
+
+It should be noted that $p$-values are also computed for each batch separately and need to be combined for each gene.
+We use Fisher's method to do so, under the assumption that each batch is independent of the others.
+This will test the global null hypothesis that the gene is not highly variable in any batch.
+Another option is to use Stouffer's Z method, which tests the same null hypothesis but also allows weighting of each batch by the residual d.f. used for variance estimation.
+Stouffer's method is less sensitive than Fisher's method to low $p$-values in a few batches, favouring rejection when $p$-values are low for many batches.
+However, we prefer Fisher's method precisely for this reason, as each batch may only capture a subset of the biological heterogeneity (e.g., cell types).
+Significant heterogeneity in any batch should be sufficient to reject the global null for the genes involved.
+
+The obvious disadvantage of this approach is that it only works with a single blocking factor.
+Additive models or covariates require the simpler linear modelling scheme described above.
+
+\subsection{Fitting batch-specific trends}
+The previous strategy uses batch-specific statistics with a single fitted trend.
+This is not appropriate if the trend itself differs between batches.
+In such cases, the only option is to split the dataset into its constituent batches, model the variance in each batch separately, and combine the results across batches.
+This uses a batch-specific trend fit, which avoids distorted estimates of the technical noise in each batch.
+Combining of batch-specific statistics for each gene is done using the same approach described above, i.e., weighted averages for variances and abundances, Fisher's method for $p$-values.
+
+One of the most common causes of differences in the trend is scaling normalization when the coverage of spike-in or endogenous genes differs systematically between batches.
+Consider a dataset containing two batches, where the second batch was sequenced to twice the depth of the first.
+Further assume that there are no other biases in this dataset and that sequencing is the only source of variability. 
+Using batch-specific statistics on the log-counts (without any normalization), the same mean-variance trend would manifest in both batches,
+where the data points for the second batch are shifted to the right along the trend compared to the data points for the first batch.
+However, scaling normalization will reduce the average abundance of the data points in the second batch,
+shifting them back to the left \textit{but not necessarily along the trend}.
+This effectively results in a different trend in each batch.
+
+(Incidentally, this is why the use of batch-specific statistics alone only protects against random shifts in the batch-specific average abundances.
+Random shifts in both directions should not change the distribution of size factors in each batch, avoiding problems with scaling normalization.)
+
+Another important consideration is that the calculation of normalized values need to be repeated in each batch.
+Size factors are computed globally, and an arbitrary subset is not guaranteed to be centered at unity.
+As such, they need to be re-centered within each batch prior to calculation of log-normalized values and modelling of the variance.
+See above for further details on size factor centering.
+
 \section{Further comments}
 
 \subsection{Comparison to the Brennecke method}
