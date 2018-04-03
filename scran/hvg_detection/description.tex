@@ -39,10 +39,10 @@ Without it, the trend would be pretty extreme and difficult to fit reliably, esp
 % Also, the log-transformation seems better than square-rooting it, which is the VST for the Poisson only.
 % You could play around with various Box-Cox transformations, but the mean-variance trend is pretty extreme and probably won't go away just by changing lambda.
 
-\section{Linear modelling of expression values}
+\section{Linear modelling of log-expression values}
 Here we describe the basic process of variance estimation.
-Let $y_{ig}$ be the (log-)expression value of gene $g$ in cell $i$.
-Denote the vector of expression values across all cells for $g$ as $\bm{y}_g$, with length equal to the number of cells $n$.
+Let $y_{ig}$ be the log-expression value of gene $g$ in cell $i$.
+Denote the vector of log-expression values across all cells for $g$ as $\bm{y}_g$, with length equal to the number of cells $n$.
 Assume that this can be expressed as a linear sum of $p$ predictors
 \[
 \bm{y}_g = \bm{X}\bm{\beta}_g + \bm{\epsilon}_{ig} \;,
@@ -59,7 +59,7 @@ We also write
 \[
 \bm{\mu}_g = \bm{X}\bm{\beta}_g
 \]
-where $\bm{\mu}_g$ is a vector of length $n$ containing mean expression values $\mu_{ig} = E(y_{ig})$.
+where $\bm{\mu}_g$ is a vector of length $n$ containing mean log-expression values $\mu_{ig} = E(y_{ig})$.
 
 For each gene, we fit a linear model to $\bm{y}_g$ using standard least-squares methods.
 In the fitted model, denote $\hat\mu_{ig}$ as the fitted value for each observation, with
@@ -72,7 +72,7 @@ We estimate $\sigma^2_g$ with
 \hat\sigma^2_g = \frac{\sum_{i=1}^{n} (y_{ig} - \hat\mu_{ig})^2}{n-p} \;.
 \] 
 In this manner, we obtain a variance estimate for each gene in the data set.
-We also obtain an average expression value $A_g$ for each gene by averaging $y_{ig}$ over all $i$.
+We also obtain an average abundance $A_g$ for each gene by averaging $y_{ig}$ over all $i$.
 
 \section{Modelling the distribution of variance estimates}
 Consider a set of ``control'' genes that are \textit{not} highly variable. 
@@ -118,7 +118,7 @@ This curve in the variance is defined with respect to the mean $x$ with the func
     f_1(x) = \frac{A x}{x^M + B} \label{eqn:paramtrend}
 \end{equation}
 with $A > 0$, $M > 1$ and $B > 0$.
-We chose this function as it captures major features of the mean-variance trend including a linear increase from zero at low $x$, a smooth peak at moderate $x$ and an asymptotic decrease to zero as $x \to \infty$.
+We chose this function as it captures major features of the mean-variance trend including a linear increase from zero at small positive $x$, a smooth peak at moderate $x$ and an asymptotic decrease to zero as $x \to \infty$.
 
 We use non-linear least-squares optimization to fit $f_1(.)$ to $\hat\sigma^2_s$ against $A_s$.
 Sensible starting values for each parameter are obtained as follows:
@@ -152,9 +152,9 @@ By first using a parametric curve to model the complex parts of the trend, we ca
 \section{Modelling the technical noise for endogenous genes}
 
 \subsection{Decomposing the variance components}
-Consider an endogenous gene $g$, which has a true expression of $y_{ig}^*$ in cell $i$.
+Consider an endogenous gene $g$, which has a true log-expression of $y_{ig}^*$ in cell $i$.
 Let $\mbox{var}(y_{ig}^*) = \sigma^2_{(b)g}$, representing the underlying biological variation.
-The observed expression $y_{ig}$ is then sampled from $y_{ig}|y_{ig}^* \sim T_{ig}$ with $E(T_{ig}) = y^*_{ig}$, representing the effect of technical noise.
+The observed log-expression $y_{ig}$ is then sampled from $y_{ig}|y_{ig}^* \sim T_{ig}$ with $E(T_{ig}) = y^*_{ig}$, representing the effect of technical noise.
 The observed variance is 
 \begin{align*}
     \sigma^2_g &= \mbox{var}[E(y_{ig}|y_{ig}^*)] + E[\mbox{var}(y_{ig}|y_{ig}^*)] \\
@@ -184,7 +184,7 @@ Highly variable genes are then defined at a false discovery rate threshold.
 
 \subsection{Comparing variances of controls and endogenous genes}
 Using the variance of the control genes assumes that, at the very least, $\mbox{var}(y_{ig}|y_{ig}^*) = \mbox{var}(y_{is})$ when $E(y_{is}) = y_{ig}^*$, 
-i.e., the sampling noise is the same for control and endogenous genes at the same expression level.
+i.e., the sampling noise is the same for control and endogenous genes at the same true log-expression.
 The strength of this assumption depends on the properties of the control genes.
 
 The quality of the approximation in Equation~\ref{eqn:techest} depends on how strongly $\mbox{var}(y_{ig}|y_{ig}^*)$ changes as a function of $y^*_{ig}$.
