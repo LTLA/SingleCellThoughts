@@ -182,7 +182,7 @@ Specifically, we compute
 The $p$-value for this gene is the upper tail probability at $F_g$ for an $F$-distribution with $n-p$ and $d_0$ degrees of freedom.
 Highly variable genes are then defined at a false discovery rate threshold.
 
-\subsection{Assumptions when comparing controls and endogenous genes}
+\subsection{Comparing variances of controls and endogenous genes}
 Using the variance of the control genes assumes that, at the very least, $\mbox{var}(y_{ig}|y_{ig}^*) = \mbox{var}(y_{is})$ when $E(y_{is}) = y_{ig}^*$, 
 i.e., the sampling noise is the same for control and endogenous genes at the same expression level.
 The strength of this assumption depends on the properties of the control genes.
@@ -192,16 +192,32 @@ If it does not change, the expression is exact; however, this unlikely to be the
 The approximation is also less likely to be accurate if there are strong changes with respect to $y_{ig}^*$ \textit{and} the variance of $y_{ig}^*$ across cells is high.
 Nonetheless, this approach still provides a useful approximation for modelling technical noise.
 
-It is also critical that the average abundances of the control and endogenous genes are comparable.
-This is not straightforward as different size factors are used for the two sets of genes prior to calculation of log-normalized expression values.
+\subsection{Comparing abundances of controls and endogenous genes}
+Ensuring comparability of the average abundances of the control and endogenous genes is not straightforward.
+Different size factors are generally used for control and endogenous genes prior to calculation of log-normalized expression values.
 Size factors only have a relative interpretation within each set, and there is no general rationale for adjusting size factors between sets.
 To resolve this, we assume that the magnitude of the underlying counts drives the mean-variance relationship.
 Thus, control or endogenous genes with the same average count should have the same average abundances.
 We center both sets of size factors so that $E(y_{is}/f'_i) \approx E(y_{ig}/f_i)$ if $E(y_{is})=E(y_{ig})$ for spike-in size factor $f'_i$ and endogenous size factor $f_i$ (assuming size factors are known and accurate representations of the scaling bias).
 This yields similar values upon taking the mean of the log-normalized expression.
 
-Of course, with the benefit of hindsight, we should have used the log-transformed mean normalized count as the covariate.
-This is because the expectation of the log-values may not be the same between control and endogenous genes, even if their expected normalized counts were equal.
+Of course, the mean of the log-values -- i.e., the average abundance -- is not the same as the logarithm of the mean.
+This means that the average abundance may not be the same between control and endogenous genes, even if their mean normalized counts were equal.
+In practice, the Taylor series approximation indicates that the size of the discrepancy depends on the difference in the variances of the normalized counts between the control and endogenous genes.
+If the variances are very different, it is debatable whether it makes any sense to use the average count as a measure of location for the counts in the first place.
+Indeed, the overall average may not be meaningful at all in the presence of hidden structured variation.
+Average abundances specific to each cell type would be more appropriate, though this is difficult as the cell types are not known at this point.
+Moreover, the variance of the endogenous gene should be larger than the control gene at the same mean normalized count.
+Even if there were an increase in variance large enough to cause a discrepancy in the average abundances,
+the resulting mis-estimation of technical noise should be negligible relative to the total variance.
+
+% collected.m <- collected.v <- numeric(100)
+% for (x in seq_along(collected.m)) {
+%     y <- log2(rnbinom(100000, mu=10, size=x/10)+1)
+%     collected.m[x] <- mean(y)
+%     collected.v[x] <- var(y)
+% }
+% plot(collected.m, collected.v)
 
 \section{Handling uninteresting factors of variation}
 
