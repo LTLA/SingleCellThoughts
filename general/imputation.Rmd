@@ -1,0 +1,99 @@
+# Imputation - what is it good for?
+
+```{r, echo=FALSE, results="hide"}
+knitr::opts_chunk$set(error=FALSE, warning=FALSE, message=FALSE)
+```
+
+## Overview 
+
+A common refrain in scRNA-seq method development is the need to impute zeros due to dropout events.
+The idea is to reduce noise by removing technical zeroes, thus improving the resolution of downstream analysis.
+The fundamental difficulty here is that you don't know whether a zero count is a true dropout or due to a genuine lack of expression.
+This is hard to ascertain for any given observation - you can only estimate the proportion of dropouts for a gene, and even then that requires spike-ins.
+
+## Issues with existing methods 
+
+Effective imputation requires knowledge of the biological structure in the dataset.
+We can make some reasonable assumptions about the distribution of counts due to technical noise for cells from the same population.
+This avoids trying to impute across different subpopulations of cells, some of which may be genuinely silent in their expression of a particular gene.
+
+We can obtain the structure from the data, based the similarities between the cellular expression profiles.
+The problem is that the imputation is also done on the same data, resulting in some circularities when the imputed data are used for defining structure.
+This is most clearly demonstrated by generating unstructured data, and seeing how the imputation methods subsequently introduce and reinforce any structure that might be present.
+For example, using [MAGIC](https://github.com/KrishnaswamyLab/MAGIC):
+
+```{r}
+set.seed(200)
+counts <- matrix(rpois(100000, 10), ncol=100)
+
+# devtools::install_github("KrishnaswamyLab/MAGIC/R") 
+# last tested 1be8cbfbe645331a29e4867ae84a3344d368b45c
+library(Rmagic) 
+
+# Guessing that rows are cells, based on its use of rowSums() 
+# to compute library size (seriously?)
+mgc <- run_magic(t(counts))
+
+# Creating a PCA plot.
+library(scater)
+sce <- SingleCellExperiment(list(imputed=t(mgc)))
+sce <- normalize(sce, exprs_values="imputed") 
+plotPCA(sce) # >80% variance explained!
+
+# In contrast, without any imputation:
+sce2 <- SingleCellExperiment(list(counts=counts))
+sce2 <- normalize(sce2)
+plotPCA(sce2) # 2% variance explained.
+```
+
+Or using [_scImpute_](https://github.com/Vivianstats/scImpute).
+Note that I've used a lower Poisson mean here, as _scImpute_ seems to only do something when there are zeros.
+
+```{r}
+set.seed(100)
+counts <- matrix(rpois(100000, 1), ncol=100)
+
+# devtools::install_github("Vivianstats/scImpute")
+# last tested 98b78b5b044ade682d75930eca4d936d1d85d615
+library(scImpute) 
+
+# Need to save counts to file (!!)
+xpath <- tempdir()
+count_path <- file.path(xpath, "counts.csv")
+rownames(counts) <- paste0("Gene", seq_len(nrow(counts)))
+colnames(counts) <- paste0("Cell", seq_len(ncol(counts)))
+write.csv(counts, file=count_path)
+
+# Need '/' as they don't use file.path (!!!)
+sci <- scimpute(count_path, out_dir=paste0(xpath, "/"), Kcluster=2)
+imputed <- read.csv(file.path(xpath, "scimpute_count.csv"), 
+    header=1, row.names=1)
+
+# Creating a PCA plot.
+library(scater)
+sce <- SingleCellExperiment(list(imputed=as.matrix(imputed)))
+sce <- normalize(sce, exprs_values="imputed") 
+plotPCA(sce) # Woah, what a nice structure.
+
+# In contrast, without any imputation:
+sce2 <- SingleCellExperiment(list(counts=counts))
+sce2 <- normalize(sce2)
+plotPCA(sce2) # 2% variance explained.
+```
+
+A generous interpretation of these results would be that current imputation schemes operate more like smoothers, reducing noise in the plot to highlight existing structure.
+But really, if I wanted prettier pictures, I would just shrink all points to their cluster centers - job done.
+
+## Further thoughts
+
+One _could_ imagine an approach whereby you distinguish between biological and technical noise with spike-ins.
+This will allow you to determine, on probability, whether a zero is a dropout or not.
+You could then obtain a posterior distribution for each observation, and use the MAP estimate as the imputed value for zeroes.
+This brings us very close to the "denoised expression values" computed by _BASiCS_ or _BISCUIT_.
+However, _BASiCS_ assumes all cells are in a single group, and fails to account for substructure that can affect the expected count (and thus the probability of dropout).
+_BISCUIT_ allows for some substructure with a Dirichlet process, but assumes normality that is definitely not present.
+Both would probably produce distorted MAP estimates that are of questionable benefit.
+
+So, there is no imputation without denoising, given that the zeroes are just another consequence of technical noise.
+Our approach is to handle the drop-outs on a per-gene basis, by modelling the technical variability introduced by them.
+This is simpler, involves fewer assumptions, and with the low-rank reconstructions from PCA, we can also obtain denoised expression values directly.

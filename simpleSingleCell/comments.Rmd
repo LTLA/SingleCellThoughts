@@ -875,40 +875,6 @@ The trade-off is that it is sensitive to violations of the model (distributional
 FA also has no unique solutions and may also be slower, though PCA isn't exactly fast either.
 FA with a log-link function should avoid distortions due to the log-transformation of raw counts.
 
-## Do we need imputation?
-
-The difficulty with dealing with dropouts is that you don't know whether a zero count is a true dropout or due to a genuine lack of expression.
-This is very hard to tell for any given observation - even for a gene, you can only estimate the proportion of dropouts, and that's if you have spike-ins.
-Current (simple) imputation schemes operate more like smoothers, by replacing zeroes with some (hopefully sensible) non-zero value.
-The problem is that they impute from the same data that are used downstream, rather than using external data, e.g., as in variant calling.
-For example, to impute zeroes from "similar" cells, some measure of similarity needs to be established from the expression data.
-Further clustering on the imputed counts would just support the initial similarities, misleadingly so in some instances.
-
-```{r}
-set.seed(100)
-library(scater)
-counts <- matrix(rpois(100000, 10), ncol=100)
-sce <- newSCESet(countData = counts)
-mgc <- scater:::magic(sce)
-norm_exprs(sce) <- mgc
-pdf("blah.pdf")
-multiplot(plotPCA(sce, exprs_values="exprs"), # 2% explained by PC1
-          plotPCA(sce, exprs_values="norm_exprs")) # 100% explained!
-dev.off()          
-```
-
-One _could_ imagine an approach whereby you distinguish between biological and technical noise with spike-ins.
-This will allow you to determine, on probability, whether a zero is a dropout or not.
-You could then obtain a posterior distribution for each observation, and use the MAP estimate as the imputed value for zeroes.
-This brings us very close to the "denoised expression values" computed by _BASiCS_ or _BISCUIT_.
-However, _BASiCS_ assumes all cells are in a single group, and fails to account for substructure that can affect the expected count (and thus the probability of dropout).
-_BISCUIT_ allows for some substructure with a Dirichlet process, but assumes normality that is definitely not present.
-Both would probably produce distorted MAP estimates that are of questionable benefit.
-
-So, there is no imputation without denoising, given that the zeroes are just another consequence of technical noise.
-Our approach is to handle the drop-outs on a per-gene basis, by modelling the technical variability introduced by them.
-This is simpler, involves fewer assumptions, and with the low-rank approximations in `denoisePCA`, we can also obtain denoised expression values directly.
-
 ## Dealing with oscillatory behaviour
 
 We don't explicitly identify oscillatory behaviour between two genes.
