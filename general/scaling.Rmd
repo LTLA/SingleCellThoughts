@@ -35,10 +35,11 @@ Now, imagine adding a third subpopulation that is silent for gene X.
 If standardization is performed, this will reduce the power of X to discriminate between the first two subpopulations.
 This is counterintuitive as nothing has changed between the first two subpopulations.
 
-Any scaling distorts the true log-fold changes for genes between subpopulations, though I would hope that the scaled data are not being used for DE analyses.
-It also affects interpretation of relative distances between three or more groups of cells, by changing the scale of the log-fold changes across genes.
-That is, are two groups more related than a third group?
-However, this is probably less relevant as log-fold changes between different genes are difficult to compare sensibly anyway.
+Any scaling distorts the true log-fold changes for genes between subpopulations.
+This affects interpretation of relative distances between three or more groups of cells, i.e., are two groups more related than a third group?
+Arguably, comparisons of log-fold changes between genes are difficult to interpret, 
+but we do so implicitly when computing distances between cells based on transcriptional profiles. 
+Standardization will not yield faithful estimates of the log-fold changes, which complicates interpretation even further.
 
 ## Exploiting the technical component
 
@@ -52,10 +53,15 @@ In theory, this is a better justification for standardization.
 Most genes will have low-to-zero biological components, which suggests that standardization will equalize most of the technical components across the dataset.
 This means that we can avoid domination by a few genes with large technical components.
 
-The question is whether the decreases in the technical components are faster than the decreases in the biological components.
-This is unlikely, given that any non-zero biological component will increase the total variance and result in faster down-scaling for the corresponding gene.
-However, it is possible in some situations, e.g., when high-abundance genes are enriched for large biological components.
-In such cases, the technically variable genes in the middle of the range would be downweighted with relatively little harm to the biological component.
+The first question is whether the decrease in the total technical component due to standardization is faster than the decrease in the total biological component.
+This is generally unlikely as any non-zero biological component will increase the total variance, leading to faster down-scaling for the corresponding gene.
+Any positive outcome would require some interaction with the strong mean-variance trend in log-count data.
+For example, if the noisiest genes in the mid-abundance range do not contain any biological structure, downscaling their variance would be beneficial.
+
+The second question is how standardization affects the relative contribution of genes of different abundance.
+Genes that have larger technical components will be downscaled more severely, even if they have the same biological component as other genes.
+This effectively downweights the mid-abundance genes that have fairly large technical components,
+contradicting the argument that standardization helps to cancel out the mean-variance relationship.
 
 ## Bias versus precision
 
@@ -72,3 +78,27 @@ Conversely, genes with near-zero biological components are effectively ignored d
 However, this is still an _ad hoc_ strategy.
 For total variance $V$ decomposed into $B + T$, the rescaled biological component becomes $B^2/V$ while the rescaled technical component is $TB/V$;
 neither of these values has much meaning to me, and treating them as $B$ and $T$ would clearly be wrong unless $T = 0$.
+
+## Comments on using the raw counts
+
+Standardization seems to be necessary when performing PCA or clustering on the counts rather than log-counts.
+Otherwise, the results will be driven primarily by high-abundance genes with the greatest unscaled variance.
+Putting aside the problems mentioned above, the use of standardized counts has a number of additional problems.
+This is because standardization does not change the mean-variance relationship _within_ a gene.
+I have listed a few inter-related issues below:
+
+- Limited dynamic range.
+Variation in the data are dominated by absolute differences in large counts.
+For example, in a mixture of three populations with mean counts of 1, 10 and 100, the first two are effectively indistinguishable.
+- Misrepresentation of variability for large counts.
+In the above example, we would conclude that the last population is the most variable on the count scale, e.g., assuming a Poisson distribution.
+However, by any other metric (e.g., CV^2^), the last population should be the least variable, especially as sequencing noise ceases to be a factor.
+- Absolute differences in counts are uninterpretable.
+Computing distances between (standardized) counts is less informative, as the interpretation of the difference depends on the size of the counts.
+This cannot be easily incorporated _within_ a gene; the best is to use the average abundance of the gene.
+
+
+
+
+
+
