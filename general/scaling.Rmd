@@ -2,9 +2,10 @@
 
 ## Rationale
 
-Standardization ensures that all genes contribute the same amount of variance to downstream steps like PCA and clustering.
-This avoids problems caused by the mean-variance relationship of log-count data.
-In particular, it means that genes in the middle of the range with high technical variance will not dominate the variance of the data set.
+Standardization involves scaling all features so that they have the same (unit) variance across all samples.
+This is commonly recommended for features that are not directly comparable (e.g., annual income, lifespan, education level) prior to computing an objective function.
+It ensures that the objective function is not solely determined by the feature with the largest variance, as this has no meaning when the variances are not comparable.
+In scRNA-seq contexts, standardization ensures that all genes contribute the same amount of variance to downstream steps like PCA and clustering.
 
 ## Drawbacks of standardization
 
@@ -51,7 +52,7 @@ If we only wanted the structured heterogeneity, we'd only be able to make some k
 The only aspect that we can confidently say is uninteresting is the technical component, e.g., due to sequencing/capture/amplification noise in the protocol.
 In theory, this is a better justification for standardization.
 Most genes will have low-to-zero biological components, which suggests that standardization will equalize most of the technical components across the dataset.
-This means that we can avoid domination by a few genes with large technical components.
+This means that we can avoid domination of the results by a few genes with large technical components.
 
 The first question is whether the decrease in the total technical component due to standardization is faster than the decrease in the total biological component.
 This is generally unlikely as any non-zero biological component will increase the total variance, leading to faster down-scaling for the corresponding gene.
@@ -94,11 +95,6 @@ For example, in a mixture of three populations with mean counts of 1, 10 and 100
 In the above example, we would conclude that the last population is the most variable on the count scale, e.g., assuming a Poisson distribution.
 However, by any other metric (e.g., CV^2^), the last population should be the least variable, especially as sequencing noise ceases to be a factor.
 - Absolute differences in counts are uninterpretable.
-Computing distances between (standardized) counts is less informative, as the interpretation of the difference depends on the size of the counts.
-This cannot be easily incorporated _within_ a gene; the best is to use the average abundance of the gene.
-
-
-
-
-
-
+Computing distances between (standardized) counts is not informative, as the interpretation of the difference depends on the size of the counts.
+This information cannot be easily incorporated through a single scaling factor in a mixture distribution with different true abundances.
+A difference of 1 vs 10 should not have the same weight as a difference of 91 vs 100.
