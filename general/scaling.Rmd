@@ -9,10 +9,12 @@ In scRNA-seq contexts, standardization ensures that all genes contribute the sam
 
 ## Drawbacks of standardization
 
+### Inappropriate gene weighting
+
 Standardizing will downweight the contribution of interesting genes with large total variances due to biological heterogeneity. 
 This will reduce the resolution of biological differences between cell populations.
 Of course, some genes may just be biologically noisy, but more often than not, large biological components will represent some interesting structured variation.
-Conversely, standardization will implicitly upweight genes with low total variance and small (non-zero) biological components.
+Conversely, standardization will upweight genes with low total variance and small (non-zero) biological components.
 This will amplify biological variability that was originally minor, which may be misleading.
 
 ```{r}
@@ -36,11 +38,19 @@ Now, imagine adding a third subpopulation that is silent for gene X.
 If standardization is performed, this will reduce the power of X to discriminate between the first two subpopulations.
 This is counterintuitive as nothing has changed between the first two subpopulations.
 
+### Distortion of log-fold changes
+
 Any scaling distorts the true log-fold changes for genes between subpopulations.
-This affects interpretation of relative distances between three or more groups of cells, i.e., are two groups more related than a third group?
-Arguably, comparisons of log-fold changes between genes are difficult to interpret, 
-but we do so implicitly when computing distances between cells based on transcriptional profiles. 
-Standardization will not yield faithful estimates of the log-fold changes, which complicates interpretation even further.
+This affects interpretation of relative distances between three or more groups of cells.
+In particular, it becomes difficult to determine whether two groups are more related to each other than to a third group.
+
+One could argue that log-fold changes of different genes are not comparable.
+A 2-fold change in a cell type-defining marker gene may be more important than a 10-fold change in another gene involved in cell cycle or something.
+Even so, it is hard to see how standardization does any better in this regard than using the unbiased estimates of the log-fold changes, 
+as neither incorporate _a priori_ knowledge about the importance of the genes.
+
+Under some limited conditions, standardization means that the magnitude of the separation between populations is driven by the number of DEGs, not their log-fold changes.
+Again, this is not clearly better (or worse) than computing distances based on the magnitude of the log-fold changes.
 
 ## Exploiting the technical component
 
@@ -50,26 +60,20 @@ If we only wanted the structured heterogeneity, we'd only be able to make some k
 (In which case, scaling based on the clusters and then re-clustering would probably pose some problems with circularity.)
 
 The only aspect that we can confidently say is uninteresting is the technical component, e.g., due to sequencing/capture/amplification noise in the protocol.
-In theory, this is a better justification for standardization.
+This can be used to provide a more relevant theoretical justification for standardization in scRNA-seq applications.
 Most genes will have low-to-zero biological components, which suggests that standardization will equalize most of the technical components across the dataset.
-This means that we can avoid domination of the results by a few genes with large technical components.
+This means that we can avoid domination of the results by genes with large technical components due to the nature of the mean-variance trend.
 
-The first question is whether the decrease in the total technical component due to standardization is faster than the decrease in the total biological component.
+Of course, this does not overcome the aforementioned issues with shrinkage of the biological components.
+One question is whether the decrease in the total technical component due to standardization is faster than the decrease in the total biological component.
 This is generally unlikely as any non-zero biological component will increase the total variance, leading to faster down-scaling for the corresponding gene.
 Any positive outcome would require some interaction with the strong mean-variance trend in log-count data.
 For example, if the noisiest genes in the mid-abundance range do not contain any biological structure, downscaling their variance would be beneficial.
 
-The second question is how standardization affects the relative contribution of genes of different abundance.
+Another question relates to how standardization affects the relative contribution of genes of different abundance.
 Genes that have larger technical components will be downscaled more severely, even if they have the same biological component as other genes.
-This effectively downweights the mid-abundance genes that have fairly large technical components,
+This effectively downweights the highly variable mid-abundance genes that have fairly large technical components,
 contradicting the argument that standardization helps to cancel out the mean-variance relationship.
-
-## Bias versus precision
-
-The decision to use standardization represents a bias-precision trade-off for the estimate of the underlying substructure in the data.
-Standardization will bias the estimate in favour of (potentially!) improving precision by reducing the contribution of genes with large technical components.
-Personally, I don't think that the presence of a few genes with large technical components is a major concern.
-With thousands of genes in PCA or clustering, one should still be able to recover the substructure, regardless of the random scatter in each dimension.
 
 ## Alternative strategies
 
