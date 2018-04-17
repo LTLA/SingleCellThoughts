@@ -174,3 +174,20 @@ However, we do not do so as it is often compromised by discreteness in scRNA-seq
 If the group with many cells contains only zero counts, the sample variance becomes zero, which would be incorrect.
 More generally, I do not think it is possible to report a reliable p-value when there is only one observation in one group, 
 especially as the mean-variance relationship is considered.
+
+# Reason for using pairwise tests
+
+In `findMarkers()`, we perform tests between every pair of clusters, and then aggregate the results for all tests involving a particular cluster into a single `DataFrame`.
+The aggregation is performed in a manner that ensures that the top genes in each pairwise comparison remains among the top genes in the aggregated results.
+This means that the top set is not dominated by DE genes between the chosen cluster and the cluster that is most different.
+Such a ranking would not be informative with respect to how the chosen cluster differs from other clusters.
+
+It is for a similar reason that we do not test each cluster against the (grand) average of all other clusters.
+Such a test would be additionally complicated by the fact that testing against the average expression profile is difficult to interpret, 
+as a net change in expression can belie the complexity of up/down-regulation in the individual clusters.
+This would be made even worse by testing against the average of all other _cells_, which would be dependent on the frequency of cells in each cluster.
+
+As a side note, an alternative is to use machine learning to choose a gene set that distinguishes a cluster from the rest.
+This takes advantage of combinatorics but is less useful for interpretation of the differences between clusters.
+For example, LASSO methods will only pick one gene in the set if two genes are redundant.
+This results in the failure to detect a gene that might be important for characterizing the biological identity of a cluster.
