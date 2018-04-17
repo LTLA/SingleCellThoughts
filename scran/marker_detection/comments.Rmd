@@ -12,6 +12,47 @@ The classic example is that of a cluster with all-zero expression; a linear mode
 This is relevant when clusters _other than the ones being tested_ are misspecified, as their information does not get used in pairwise t-tests.
 In contrast, inflation of the sample variance would be observed with a linear model.
 
+# Normality requirements, or lack thereof
+
+The distributional assumptions of the Welch t-test are surprisingly unproblematic at large sample sizes.
+Consider that the following examples work pretty well:
+
+```r
+# On highly non-normal distributions
+p <- numeric(10000)
+for (x in seq_along(p)) {
+    a <- rexp(100, rate=1)
+    b <- rexp(100, rate=1)    
+    p[x] <- t.test(a, b)$p.value
+}
+hist(p)
+
+# On the normalized counts.
+p <- numeric(10000)
+for (x in seq_along(p)) {
+    a <- rnbinom(100, mu=10, size=10)
+    b <- rnbinom(100, mu=1, size=1) * 10
+    p[x] <- t.test(a, b)$p.value
+}
+hist(p)
+
+# On the log-counts.(notwithstanding the fact that the
+# mean of the logs is not generally equal to the log of the means).
+p <- numeric(10000)
+for (x in seq_along(p)) {
+    a <- log(rnbinom(100, mu=10, size=10)+1)
+    b <- log(rnbinom(100, mu=10, size=10)+1)
+    p[x] <- t.test(a, b)$p.value
+}
+hist(p)
+```
+
+It is worth noting that this is _not_ driven by the CLT, which only applies to asymptotic normality of the sample means.
+This does not ensure that the sample variance is chi-squared distributed, which is necessary for the t-test to work.
+Rather, the continued operation of the t-test is probably due to dependencies between the sample means and variances for these distributions.
+This means that you are more likely to get a large mean and variance at the same time, thus cancelling out the effects of non-normality.
+The other possibility is that the variance becomes so well estimated that the t-test converges to the z-test, but I don't think we have the sample sizes for that.
+
 # Comparison to _limma_
 
 The obvious downside to our use of t-tests is the loss of power from reduced information. 
