@@ -174,4 +174,14 @@ a <- rnbinom(10000, mu=100, size=0.1)
 b <- rnbinom(10000, mu=1, size=0.1)
 mean(log2(a/10+1))
 mean(log2(b*10+1))
+
+# Shift in means is much smaller than the SD within each group:
+sd(log2(a/10+1))
+sd(log2(b*10+1))
 ```
+
+Admittedly, for DE analyses, this is more troublesome as a shift in the group centers _will_ be resolved with enough cells.
+Nonetheless, the differences in the mean log-counts are still small and should not drive spurious differences to the top-ranked set of DEGs.
+The discrepancy is exacerbated if one of the groups has a much larger dispersion, but it is difficult to interpret comparisons of the mean for different distribution shapes.
+Accepting the null doesn't allow you to conclude that there is no difference between groups, 
+while borderline rejections don't guarantee that the reported sign of the shift in mean is correct!
