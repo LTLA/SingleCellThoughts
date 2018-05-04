@@ -1,0 +1,139 @@
+---
+title: Bootstrapping for cluster stability
+author: Aaron Lun
+date: "`r Sys.Date()`"
+output:
+  BiocStyle::html_document:
+    toc: true
+bibliography: ref.bib
+---
+    
+```{r, echo=FALSE, results="hide"}
+knitr::opts_chunk$set(error=FALSE, warning=FALSE, message=FALSE)
+set.seed(100)
+```
+
+# Overview
+
+Exploratory analyses of single-cell RNA sequencing (scRNA-seq) data often involve clustering to summarize the data for further interpretation.
+It is routine to assess the quality of the clustering, e.g., based on how separated or modular the clusters are.
+To this end, the concept of "cluster stability" is used to determine whether the clusters are reproducible in a replicate experiment.
+Bootstrapping is often used for this purpose, providing a non-parametric method to generate replicate datasets _in silico_.
+Here we will discuss some of the common uses of bootstrapping in scRNA-seq data analyses.
+
+# By gene
+
+The simplest approach is to resample the genes to generate a "replicate" dataset.
+Assume that we have a cell-based clustering approach that was used to generate clusterings in the original dataset.
+We generate a bootstrap replicate by sampling genes with replacement, apply our clustering method to the replicate, record the clusterings, and repeat.
+For two cells that were originally clustered together, we report the percentage of times that they were clustered together in the replicate.
+Conversely, for cells that were not originally clustered together, we report the percentage of times that they were _not_ clustered together in the replicate.
+This provides a measure of reproducibility for the clustering, with larger values indicating that the clusters are more stable. 
+
+This approach is implemented in a number of software packages such as [pvclust](https://cran.r-project.org/package=pvclust) [@suzuki2006pvclust],
+and was probably motivated by the use of bootstrap confidence intervals for phylogenetic trees [@efron1996bootstrap].
+It is appealing as the identities of the cells/samples are not altered, allowing a direct comparison of clusterings between the replicate and original datasets.
+However, bootstrapping on genes assumes that the genes are independent and drawn from the same distribution.
+(Technically, this is independence conditional on the underlying structure, as genes supporting the same clustering would always have correlated expression profiles.)
+This is untrue due to correlations between co-regulated genes _within_ clusters.
+
+To illustrate, let's have a look at 100 cells that belong to the same cluster.
+These cells express strongly co-regulated genes in each of 5 pathways.
+However, there is no systematic structure among the 5 pathways.
+
+```{r}
+dataGen <- function (npath, perpath, ncells) {
+    each.path <- matrix(rnorm(npath*ncells), ncol=ncells)
+    gene.exprs <- each.path[rep(seq_len(npath), each=perpath),]
+    gene.exprs + rnorm(length(gene.exprs), 0.1)
+}
+y <- dataGen(npath=5, perpath=100, ncells=100)
+```
+
+We apply simple _k_-means to split this into 4 clusters.
+This clustering is completely spurious as there is no real structure here.
+
+```{r}
+clusterFun <- function(y) {
+    cluster <- kmeans(t(y), centers=4)$cluster
+    outer(cluster, cluster, "==")
+}
+together <- clusterFun(y)
+```
+
+We perform bootstrapping on the genes to assess cluster stability.
+This is done by checking whether the co-clusterings of cells are preserved in the bootstrap replicate.
+
+```{r}
+result <- matrix(0, ncol(y), ncol(y))
+for (x in 1:100) {
+    new.y <- y[sample(nrow(y), nrow(y), replace=TRUE),]
+    new.together <- clusterFun(new.y)
+    result <- result + as.integer(new.together==together)
+}
+```
+
+We can compare this to a true replicate of this dataset.
+Recall that the pathway expression is unstructured, so we are not under any obligation to re-use the structure in `y`.
+
+```{r}
+result2 <- matrix(0, ncol(y), ncol(y))
+for (x in 1:100) {
+    new.y <- dataGen(npath=5, perpath=100, ncells=100)
+    new.together2 <- clusterFun(new.y)
+    result2 <- result2 + as.integer(new.together2==together)
+}
+```
+
+We can see that the reproducibility values are consistently overestimated by bootstrapping.
+This is a consequence of the correlations between genes. 
+The true reproducibility for co-clustering is close to 25%, as cells are split across 4 clusters.
+
+```{r, fig.wide=TRUE}
+par(mfrow=c(1,2))
+boxplot(split(result, together), ylab="Reproducibility (%)", 
+    xlab="Same cluster", main="Bootstrapping", ylim=c(0, 100))
+boxplot(split(result2, together), ylab="Reproducibility (%)", 
+    xlab="Same cluster", main="Truth", ylim=c(0, 100))
+```
+
+Conversely, bootstrapping is reasonably accurate if the genes are actually independent.
+This is consistent with the underlying assumptions of the gene-based bootstrap.
+
+```{r, fig.wide=TRUE}
+y <- dataGen(npath=500, perpath=1, ncells=100)
+together <- clusterFun(y)
+
+result3 <- matrix(0, ncol(y), ncol(y))
+for (x in 1:100) {
+    new.y <- y[sample(nrow(y), nrow(y), replace=TRUE),]
+    new.together <- clusterFun(new.y)
+    result3 <- result3 + as.integer(new.together==together)
+}
+
+result4 <- matrix(0, ncol(y), ncol(y))
+for (x in 1:100) {
+    new.y <- dataGen(npath=500, perpath=1, ncells=100)
+    new.together <- clusterFun(new.y)
+    result4 <- result4 + as.integer(new.together==together)
+}
+
+par(mfrow=c(1,2))
+boxplot(split(result3, together), ylab="Reproducibility (%)", 
+    xlab="Same cluster", main="Bootstrapping", ylim=c(0, 100))
+boxplot(split(result4, together), ylab="Reproducibility (%)", 
+    xlab="Same cluster", main="Truth", ylim=c(0, 100))
+```
+
+More subtle variants of this problem arise when there is actually some weak underlying structure.
+In such cases, the correlation-induced bias of the bootstrap estimates may inflate the apparent stability of the clusters.
+This defeats the purpose of using these estimates as an objective criterion for determining the number and reliability of clusters.
+
+# Session information
+
+```{r}
+sessionInfo()
+```
+
+# References
+
