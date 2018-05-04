@@ -33,9 +33,14 @@ This provides a measure of reproducibility for the clustering, with larger value
 This approach is implemented in a number of software packages such as [pvclust](https://cran.r-project.org/package=pvclust) [@suzuki2006pvclust],
 and was probably motivated by the use of bootstrap confidence intervals for phylogenetic trees [@efron1996bootstrap].
 It is appealing as the identities of the cells/samples are not altered, allowing a direct comparison of clusterings between the replicate and original datasets.
-However, bootstrapping on genes assumes that the genes are independent and drawn from the same distribution.
-(Technically, this is independence conditional on the underlying structure, as genes supporting the same clustering would always have correlated expression profiles.)
+However, bootstrapping on genes makes a number of assumptions:
+
+- The genes are independent - or specifically, independent conditional on the underlying structure
+(as genes supporting the same clustering would always have correlated expression profiles).
 This is untrue due to correlations between co-regulated genes _within_ clusters.
+- The genes are drawn from the same distribution.
+To see why this is not sensible, consider an example with two clusters and 50 genes that change strongly in each direction between clusters.
+For some of these genes, the sign of the change will be flipped upon bootstrapping, which is absurd if the bootstrapped sample is to be considered a replicate.
 
 To illustrate, let's have a look at 100 cells that belong to the same cluster.
 These cells express strongly co-regulated genes in each of 5 pathways.
