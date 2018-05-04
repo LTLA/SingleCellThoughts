@@ -23,6 +23,8 @@ Here we will discuss some of the common uses of bootstrapping in scRNA-seq data 
 
 # By gene
 
+## Overview 
+
 The simplest approach is to resample the genes to generate a "replicate" dataset.
 Assume that we have a cell-based clustering approach that was used to generate clusterings in the original dataset.
 We generate a bootstrap replicate by sampling genes with replacement, apply our clustering method to the replicate, record the clusterings, and repeat.
@@ -30,7 +32,7 @@ For two cells that were originally clustered together, we report the percentage 
 Conversely, for cells that were not originally clustered together, we report the percentage of times that they were _not_ clustered together in the replicate.
 This provides a measure of reproducibility for the clustering, with larger values indicating that the clusters are more stable. 
 
-This approach is implemented in a number of software packages such as [pvclust](https://cran.r-project.org/package=pvclust) [@suzuki2006pvclust],
+This approach is implemented in a number of software packages such as `r CRANpkg("pvclust")` [@suzuki2006pvclust],
 and was probably motivated by the use of bootstrap confidence intervals for phylogenetic trees [@efron1996bootstrap].
 It is appealing as the identities of the cells/samples are not altered, allowing a direct comparison of clusterings between the replicate and original datasets.
 However, bootstrapping on genes makes a number of assumptions:
@@ -41,6 +43,8 @@ This is untrue due to correlations between co-regulated genes _within_ clusters.
 - The genes are drawn from the same distribution.
 To see why this is not sensible, consider an example with two clusters and 50 genes that change strongly in each direction between clusters.
 For some of these genes, the sign of the change will be flipped upon bootstrapping, which is absurd if the bootstrapped sample is to be considered a replicate.
+
+## Simulation
 
 To illustrate, let's have a look at 100 cells that belong to the same cluster.
 These cells express strongly co-regulated genes in each of 5 pathways.
@@ -102,7 +106,7 @@ boxplot(split(result2, together), ylab="Reproducibility (%)",
     xlab="Same cluster", main="Truth", ylim=c(0, 100))
 ```
 
-Conversely, bootstrapping is reasonably accurate if the genes are actually independent.
+Conversely, bootstrapping is accurate if the genes are actually independent.
 This is consistent with the underlying assumptions of the gene-based bootstrap.
 
 ```{r, fig.wide=TRUE}
@@ -133,6 +137,99 @@ boxplot(split(result4, together), ylab="Reproducibility (%)",
 More subtle variants of this problem arise when there is actually some weak underlying structure.
 In such cases, the correlation-induced bias of the bootstrap estimates may inflate the apparent stability of the clusters.
 This defeats the purpose of using these estimates as an objective criterion for determining the number and reliability of clusters.
+
+# By cell
+
+## Overview
+
+The alternative approach to bootstrapping is to resample the cells with replacement.
+Here we are resampling observations, which is closer to the original application of the bootstrap [@efron1986bootstrap].
+We can reasonably assume that cells were independently^[Depending on the experimental protocol used for sampling the cells, of course.] drawn from the same underlying population,
+such that the cell-bootstrapped replicate is a close approximation of a real experimental replicate.
+No assumptions about the independence of genes are involved, which is appealing.
+
+It is important to keep in mind that bootstrapping on the cells fundamentally changes the cell identities in the bootstrap replicate.
+A resampled cell in a bootstrap replicate cannot be considered to be the same as the cell-of-origin in the original dataset.
+This reflects the fact that, in a real scRNA-seq experiment, we cannot obtain replicate observations from the same cell.
+The resampled cell is a conceptually new cell, which simply happens to have an expression profile identical to the cell-of-origin. 
+
+The question then becomes, how do we assess cluster stability if the cell identities have changed in the replicate?
+The `r CRANpkg("fpc")` package [@hennig2007clusterwise] provides cluster-specific stability measures by bootstrapping on the cells with the `clusterboot` function.
+This is achieved by computing the maximum Jaccard similarity between each bootstrapped and original cluster, and taking the mean Jaccard index across bootstrap iterations.
+Larger Jaccard indices indicate that the cluster was mostly recovered in the bootstrap replicate.
+
+The `clusterboot` approach relies on a mapping between cells in the original dataset to that in the bootstrap replicate.
+This is achieved by keeping track of the identities of the resampled cells in each bootstrap iteration.
+At first glance, this seems inappropriate as cell identities are altered by bootstrapping.
+However, if we did have a replicate, we could construct a mapping using a nearest-neighbour approach; 
+and the nearest neighbour of each resampled cell in the original dataset would simply be the cell-of-origin, as they have the same expression profile!
+
+## Simulation
+
+We can check whether the `clusterboot` approach yields sensible Jaccard indices with a small simulation.
+First, we set up a function to map replicate cells to the original dataset, and to calculate the Jaccard indices:
+
+```{r}
+library(FNN)
+mapJaccard <- function(y, cluster, new.y, new.cluster) {
+    m <- get.knnx(t(y), t(new.y), k=1)$nn.index
+    re.cluster <- cluster[m]
+
+    by.reclust <- split(seq_along(re.cluster), re.cluster)
+    by.newclust <- split(seq_along(new.cluster), new.cluster)
+    output <- numeric(length(by.newclust))
+    names(output) <- names(by.newclust)
+
+    # Original clusters with no cells in the bootstrap get Jaccard=0.
+    for (X in names(by.reclust)) {
+        current <- by.reclust[[X]]
+        jaccards <- lapply(by.newclust, FUN=function(other) {
+            length(intersect(current, other))/length(union(current,other))
+        })
+        output[X] <- max(unlist(jaccards))
+    }
+    return(output)
+}
+```
+
+We also set up a simple _k_-means function to report the clustering:
+
+```{r}
+clusterFun2 <- function(y) {
+    kmeans(t(y), centers=4)$cluster
+}
+```
+
+We use bootstrapping to compute Jaccard indices:
+
+```{r}
+y <- dataGen(npath=500, perpath=1, ncells=100)
+cluster <- clusterFun2(y)
+
+result3 <- vector("list", 100)
+for (x in seq_along(result3)) {
+    new.y <- y[sample(nrow(y), nrow(y), replace=TRUE),]
+    new.cluster <- clusterFun2(new.y)
+    result3[[x]] <- mapJaccard(y, cluster, new.y, new.cluster)
+}
+result3 <- do.call(rbind, result3)
+colMeans(result3)
+```
+
+... and we repeat this with true replicates.
+The two sets of Jaccard indices are quite similar, which suggests that the implicit mapping used by `clusterboot` is acceptable
+(and that the variability of the nearest-neighbour mapping can be ignored).
+
+```{r}
+result4 <- vector("list", 100)
+for (x in seq_along(result4)) { 
+    new.y <- dataGen(npath=500, perpath=1, ncells=100)
+    new.cluster <- clusterFun2(new.y)
+    result4[[x]] <- mapJaccard(y, cluster, new.y, new.cluster)
+}
+result4 <- do.call(rbind, result4)
+colMeans(result4)
+```
 
 # Session information
 
