@@ -1,0 +1,107 @@
+---
+title: Comments on the quality control steps in the workflow
+author: Aaron Lun
+output:
+  BiocStyle::html_document:
+    fig_caption: yes
+---
+
+# Improving resolution with log-transformed QC metrics
+
+The log-transformation improves resolution by compressing large values, typically reducing the MAD relative to the median for distributions with long right tails.
+This ensures that "3 MADs away from the median" does not lie beyond all data values.
+It also expands the range of small values, making it easier to distinguish between outliers and the edge of the distribution of acceptable values.
+
+From a theoretical perspective, the log-transformation tends to make positive distributions (usually with long right tails) more normal-looking.
+The 3-MAD threshold has a fairly simple interpretation for normal distributions, enabling the removal of points with lower than 1% likelihood.
+
+On a more conceptual note, the MAD is necessary to account for genuine biological heterogeneity in these metrics.
+That's why we don't use a hard-and-fast fold-change threshold from the median, as this would be too aggressive or not aggressive enough in some situations.
+
+# Interpreting the proportion mapped to spike-ins
+
+It shouldn't matter too much if it's the proportion against total counts, or the ratio relative to the endogenous counts.
+This is because we're not measuring an increase in mitochondrial/spike-in counts, but rather, a depletion of endogenous RNA.
+If endogenous RNA decreases in low-quality cells, the mitochondrial/spike-in proportions against the total count should both increase.
+We don't have to worry about effects of, e.g., an increase in mitochondrial counts affecting the proportion of spike-in counts.
+
+The absolute value of the spike-in proportion can also be used for QC.
+You would want about 5-10% of the reads going to the spike-ins.
+If this is not the case, it suggests that you need to alter the dilution.
+You can also compare the observed proportions to the expected values, which can be calculated if RNA quantification was done on the cells beforehand.
+Neither of these approaches provide a threshold for filtering, but they do tell you if the experiment went well or not.
+
+Also, we don't use the logit transform for the proportions, even though on the raw scale we could theoretically end up with a above-unity threshold.
+This is because the logit transform compresses changes within the middle of the [0,1] range.
+This reduces the resolution for where the threshold would usually be.
+
+# Mitochondrial proportions vs spike-ins
+
+I've generally considered the mitochondrial proportion to be worse than the spike-in proportion for detecting broken cells.
+This is because the former is additionally affected by the number and activity of the mitochondria, whereas the latter is not.
+The number of mitochondria definitely varies between cell types, see https://dx.doi.org/10.1002/jcp.1041360316;
+and the ratio of mitochondrial RNA to total RNA also varies, see Figure 2F of https://dx.doi.org/10.1016/j.cell.2011.06.051.
+The proportion seems to go above the 5% threshold that people regularly use, which really kills the use of a hard threshold.
+
+More generally, the use of the mitochondrial proportions depends on a fairly restricted type of damage.
+The cell has to leak large amounts of cytoplasmic RNA without losing mitochondria.
+In cases of severe damage, only the nucleus would be left and you would get mitochondrial proportions of zero.
+
+On the flip side, if the number of mitochondria per cell volume were constant (probably untrue), then the mitochondrial proportion would be a better measure of cell damage,
+as the spike-in proportion would also be affected by the total RNA content of the cell.
+Cells with high mitochondrial proportions also tend to have low total counts in real data, so perhaps the biology is not so pronounced in this metric.
+There's also no choice for data without spike-ins, such as droplet data.
+In those cases, plotting mitochondrial proportions against the total count can verify that you're not removing obvious biology.
+
+I would only trust mitochondrial proportions if they aligned with the other metrics anyway.
+It's too early in the analysis to add a whole bunch of assumptions about consistency of the mitochondrial ratios across the population.
+If mitochondrial proportions have an effect, the mitochondrial genes should show up as highly variable, at which point you can make a decision about whether to filter on this metric.
+You can't do the same with spike-ins as spike-in-specific normalization means that you should never see the spike-ins systematically appear in the HVG set.
+
+# Batch-by-batch quality control
+
+Systematic differences in QC metrics can be handled to some extent using the `batch` argument in the `isOutlier` function.
+This is obviously useful for batch effects caused by known differences in experimental processing, e.g., sequencing at different depth or had different amounts of spike-in added.
+It may also be useful if an _a priori_ cell type has systematically fewer expressed genes or lower RNA content.
+Analyzing all cell types together would inflate the MAD and compromise QC at best, or lead to the entire loss of one cell type at worst.
+
+In general, it seems better to block on more factors rather than fewer, to avoid MAD inflation and improve outlier identification.
+The risk is that you'll lose more cells within each batch because the MAD is smaller, such that an uncommon subset of (high-quality) cells end up being removed.
+However, this is arguably a different problem, i.e., violation of the homogeneity assumption.
+Artificially inflating the MAD to compensate is disingenuous, and one would prefer explicit increasing to `nmads` or just not using the filter altogether.
+
+# Arguments for light-touch (or no) QC
+
+There's an implicit assumption that these technical metrics are homogeneous across cell subtypes and states.
+Some heterogeneity is tolerated provided that the inter-state variance of the metric is smaller than the intra-state variance.
+However, this assumption won't be true for extreme cases like erythrocytes, resulting in the incorrect removal of cell types.
+
+I'm not sure there's a good automatic way to distinguish between low quality cells and those from a different cell type when heterogeneous QC metrics are observed.
+You might think to use the expression of endogenous genes to gauge whether the QC-outliers form a cluster and thus might be a genuine cell type.
+However, the point is that poor quality affects the observed expression in ways that are difficult to normalize (see the Illicic paper).
+It would not be subsequently easy to tell whether a cluster was due to genuine biological separation or due to technical differences in quality.
+In the most obvious case, all the empty wells might cluster together due to the ambient RNA, even though this is clearly not a cell type.
+
+One could argue that it would be better not to do any QC at all to avoid discarding distinct cell types.
+However, if low quality cells are retained, they can drive selection of HVGs and dominate selection of the first few PCs.
+This is due to a combination of low precision when the count is small _and_ extreme normalization with small size factors 
+(especially if mRNA loss is not uniform, in which case transcripts that were preferentially retained will now be strongly DE).
+Intepretation of the results is subsequently more difficult if your latent factors of variation are driven by quality^[You would need to use FA to account for the uncertainty of these estimates during dimensionality reduction, but this would require a major shift of the entire pipeline.].
+At worst, these low-quality cells can form their own clusters, further complicating interpretation.
+
+# Cell filtering before gene filtering
+
+It is intuitively logical to remove low-quality cells before computing the average counts and performing gene filtering.
+Otherwise, the averages would be distorted by empty cells or cells with 100% spike-ins.
+However, one _could_ argue that some cells become low quality after filtering on the genes.
+In particular, cells might drop below the "number of expressed features" threshold after some genes are removed.
+This would indicate a need for repeated cycles of filtering on cells and genes, which would be rather laborious.
+
+In practice, this is unlikely to be a problem.
+Removal of an inordinate number of expressed features in some cells relative to other cells would only occur due to DE genes.
+If most genes are not DE, they should be filtered at an equal rate for all cells.
+This suggests that filtering is unlikely to cause cells to suddenly become outliers with respect to the number of expressed features.
+Most cells surviving the initial round of QC are also likely to have diverse transcriptomes, so the total count should not suddenly drop either.
+(In any case, genes that are dominating the sequencing output of a cell would probably not get filtered.)
+
+
