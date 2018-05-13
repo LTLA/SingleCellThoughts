@@ -1,15 +1,28 @@
-# Should we standardize the log-counts?
+---
+title: Should we standardize the log-counts?
+author: Aaron Lun
+date: "`r Sys.Date()`"
+output:
+  BiocStyle::html_document:
+    toc: true
+bibliography: ref.bib
+---   
 
-## Rationale
+```{r, echo=FALSE, message=FALSE}
+library(BiocStyle)
+knitr::opts_chunk$set(error=FALSE, message=FALSE, warning=FALSE)
+```
+
+# Rationale
 
 Standardization involves scaling all features so that they have the same (unit) variance across all samples.
 This is commonly recommended for features that are not directly comparable (e.g., annual income, lifespan, education level) prior to computing an objective function.
 It ensures that the objective function is not solely determined by the feature with the largest variance, as this has no meaning when the variances are not comparable.
 In scRNA-seq contexts, standardization ensures that all genes contribute the same amount of variance to downstream steps like PCA and clustering.
 
-## Drawbacks of standardization
+# Drawbacks of standardization
 
-### Inappropriate gene weighting
+## Inappropriate gene weighting
 
 Standardizing will downweight the contribution of interesting genes with large total variances due to biological heterogeneity. 
 This will reduce the resolution of biological differences between cell populations.
@@ -38,7 +51,7 @@ Now, imagine adding a third subpopulation that is silent for gene X.
 If standardization is performed, this will reduce the power of X to discriminate between the first two subpopulations.
 This is counterintuitive as nothing has changed between the first two subpopulations.
 
-### Distortion of log-fold changes
+## Distortion of log-fold changes
 
 Any scaling distorts the true log-fold changes for genes between subpopulations.
 This affects interpretation of relative distances between three or more groups of cells.
@@ -52,7 +65,7 @@ as neither incorporate _a priori_ knowledge about the importance of the genes.
 Under some limited conditions, standardization means that the magnitude of the separation between populations is driven by the number of DEGs, not their log-fold changes.
 Again, this is not clearly better (or worse) than computing distances based on the magnitude of the log-fold changes.
 
-## Exploiting the technical component
+# Exploiting the technical component
 
 The main aim of standardization is to eliminate uninteresting differences in variance between genes.
 Unfortunately, we can't say whether the biological component is interesting or not from its magnitude alone.
@@ -75,7 +88,9 @@ Genes that have larger technical components will be downscaled more severely, ev
 This effectively downweights the highly variable mid-abundance genes that have fairly large technical components,
 contradicting the argument that standardization helps to cancel out the mean-variance relationship.
 
-## Alternative strategies
+# Alternative strategies
+
+## Scaling to preserve the biological component
 
 A more refined option is to scale each gene such that its variance becomes equal to the biological component.
 This accounts for the mean-variance trend and upweights genes with large biological components (rather than penalizing them).
@@ -84,7 +99,47 @@ However, this is still an _ad hoc_ strategy.
 For total variance $V$ decomposed into $B + T$, the rescaled biological component becomes $B^2/V$ while the rescaled technical component is $TB/V$;
 neither of these values has much meaning to me, and treating them as $B$ and $T$ would clearly be wrong unless $T = 0$.
 
-## Comments on using the raw counts
+## Variance stabilizing transformation
+
+It was proposed to me that we should use the `vst` function from `r Biocpkg("DESeq2")` to perform the transformation.
+However, this does not avoid any of the issues described above with inappropriate scaling of the biological component.
+Consider the following example, where two genes separate two groups of cells:
+
+```{r}
+set.seed(1000)
+ngenes <- 1000
+means <- 2^sort(runif(ngenes, 5, 10))
+dispersion <- 10/means + 0.1
+
+ncells <- 200
+counts <- matrix(rnbinom(ngenes*ncells, mu=means, size=1/dispersion), 
+    ncol=ncells)
+
+# Adding DE.
+half <- seq_len(100)
+counts[1,half] <- rnbinom(ncells/2, mu=means[1]*2, size=1/dispersion[1])
+counts[ngenes,half] <- rnbinom(ncells/2, mu=means[ngenes]*2, 
+    size=1/dispersion[ngenes])
+```
+
+Using `vst` and a simple log-transformation in this simulation indicates that only the latter preserves the size of the log-fold change.
+
+```{r}
+library(DESeq2)
+outV <- vst(counts)
+mean(outV[1,half]) - mean(outV[1,-half]) # not 1.
+mean(outV[ngenes,half]) - mean(outV[ngenes,-half]) # close to 1.
+
+outL <- log2(counts + 1)    
+mean(outL[1,half]) - mean(outL[1,-half]) # close to 1.
+mean(outL[ngenes,half]) - mean(outL[ngenes,-half]) # close to 1.
+```
+
+The counts are pretty large here, so the value of the pseudo-count should not be an issue, nor should there be any shrinkage to compensate for Poisson noise.
+Rather, this is due to the fact that `vst` automatically squeezes values together more strongly when the count data are noisy, in order to stabilize the variance.
+Less squeezing occurs at higher counts, resulting in a distortion of the log-fold changes (equivalent to that of the biological component).
+
+# Comments on using the raw counts
 
 Standardization seems to be necessary when performing PCA or clustering on the counts rather than log-counts.
 Otherwise, the results will be driven primarily by high-abundance genes with the greatest unscaled variance.
