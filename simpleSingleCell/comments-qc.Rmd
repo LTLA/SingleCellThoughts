@@ -41,11 +41,12 @@ I've generally considered the mitochondrial proportion to be worse than the spik
 This is because the former is additionally affected by the number and activity of the mitochondria, whereas the latter is not.
 The number of mitochondria definitely varies between cell types, see https://dx.doi.org/10.1002/jcp.1041360316;
 and the ratio of mitochondrial RNA to total RNA also varies, see Figure 2F of https://dx.doi.org/10.1016/j.cell.2011.06.051.
-The proportion seems to go above the 5% threshold that people regularly use, which really kills the use of a hard threshold.
+The proportion seems to go above the 5% threshold that people regularly use, which makes a hard threshold ineffective.
 
 More generally, the use of the mitochondrial proportions depends on a fairly restricted type of damage.
 The cell has to leak large amounts of cytoplasmic RNA without losing mitochondria.
-In cases of severe damage, only the nucleus would be left and you would get mitochondrial proportions of zero.
+In cases of severe damage, only the nucleus would be left, resulting in mitochondrial proportions of zero.
+Thus, the spike-in proportion is a more reliable metric for detecting cell damage.
 
 On the flip side, if the number of mitochondria per cell volume were constant (probably untrue), then the mitochondrial proportion would be a better measure of cell damage,
 as the spike-in proportion would also be affected by the total RNA content of the cell.
@@ -55,7 +56,7 @@ In those cases, plotting mitochondrial proportions against the total count can v
 
 I would only trust mitochondrial proportions if they aligned with the other metrics anyway.
 It's too early in the analysis to add a whole bunch of assumptions about consistency of the mitochondrial ratios across the population.
-If mitochondrial proportions have an effect, the mitochondrial genes should show up as highly variable, at which point you can make a decision about whether to filter on this metric.
+If mitochondrial proportions do vary, the mitochondrial genes should show up as highly variable, at which point you can make a decision about whether to filter on this metric.
 You can't do the same with spike-ins as spike-in-specific normalization means that you should never see the spike-ins systematically appear in the HVG set.
 
 # Batch-by-batch quality control
@@ -72,22 +73,34 @@ Artificially inflating the MAD to compensate is disingenuous, and one would pref
 
 # Arguments for light-touch (or no) QC
 
-There's an implicit assumption that these technical metrics are homogeneous across cell subtypes and states.
+As previously discussed, there's an implicit assumption that these technical metrics are homogeneous across cell subtypes and states.
 Some heterogeneity is tolerated provided that the inter-state variance of the metric is smaller than the intra-state variance.
 However, this assumption won't be true for extreme cases like erythrocytes, resulting in the incorrect removal of cell types.
 
 I'm not sure there's a good automatic way to distinguish between low quality cells and those from a different cell type when heterogeneous QC metrics are observed.
-You might think to use the expression of endogenous genes to gauge whether the QC-outliers form a cluster and thus might be a genuine cell type.
-However, the point is that poor quality affects the observed expression in ways that are difficult to normalize (see the Illicic paper).
-It would not be subsequently easy to tell whether a cluster was due to genuine biological separation or due to technical differences in quality.
-In the most obvious case, all the empty wells might cluster together due to the ambient RNA, even though this is clearly not a cell type.
-
+Poor quality affects the observed expression in ways that are difficult to normalize (see the Illicic paper).
 One could argue that it would be better not to do any QC at all to avoid discarding distinct cell types.
-However, if low quality cells are retained, they can drive selection of HVGs and dominate selection of the first few PCs.
-This is due to a combination of low precision when the count is small _and_ extreme normalization with small size factors 
-(especially if mRNA loss is not uniform, in which case transcripts that were preferentially retained will now be strongly DE).
-Intepretation of the results is subsequently more difficult if your latent factors of variation are driven by quality^[You would need to use FA to account for the uncertainty of these estimates during dimensionality reduction, but this would require a major shift of the entire pipeline.].
-At worst, these low-quality cells can form their own clusters, further complicating interpretation.
+However, this has a few problems:
+
+- Low-quality cells can drive selection of HVGs and dominate PC definitions.
+This is due to a combination of low precision when the count is small _and_ extreme normalization with small size factors.
+In the worst case, the first few HVGs or PCs are dedicated to separating low-quality cells from the others (e.g.,  one PC per cell).
+Feature selection would then exclude the actual biology and enrich for technical noise.
+Of course, one could counter this by not performing feature selection, but such an approach would degrade performance of all downstream methods.
+- Low-quality cells can form their own clusters, complicating downstream interpretation.
+For example, all the empty wells might cluster together due to the ambient RNA, even though this is clearly not a cell type.
+Alternatively, if mRNA loss is not uniform, damaged cells will have their own "damage profile" corresponding to nuclear-enriched mRNAs and cluster together accordingly.
+The formation of a cluster does not necessarily indicate that the cells are of high quality, due to these systematic effects associated with low quality.
+- Clusters of low-quality cells can appear to have strong DE compared to other clusters.
+Part of this is obviously due to the fact that they have zero counts for many genes.
+However, their small size factors can also drive apparent upregulation of the remaining genes (e.g., from the ambient RNA or preferentially retained in the nucleus).
+This manifests as misleading marker genes, further complicating assignment of cluster identity.
+
+Thus, the best approach is probably to filter out low-quality cells on the first pass.
+This yields a set of reliable results that are generally satisfactory and will take some time to interpret anyway.
+Only if there is evidence for discarded cell types (e.g., by making an MA plot of the discarded versus retained expression profiles) should the filters be relaxed.
+It is true that we bias against cell types with low RNA content, but this is just a reflection of the overall bias in the scRNA-seq protocol.
+The more delicate cell types are likely being lost during dissociation anyway, so the technique was never a truly unbiased assay to start with.
 
 # Cell filtering before gene filtering
 
