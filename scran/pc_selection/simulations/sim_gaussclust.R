@@ -3,8 +3,8 @@
 # - NPOPS: the number of populations.
 # - SD: the standard deviation of the population means.
 
-if (!exists(NPOPS)) NPOPS <- 5
-if (!exists(SD)) SD <- 1
+if (!exists("NPOPS")) NPOPS <- 5
+if (!exists("SD")) SD <- 1
 
 FUN <- function(ngenes, ncells) {
     in.pop <- sample(NPOPS, ncells, replace=TRUE)
@@ -14,4 +14,4 @@ FUN <- function(ngenes, ncells) {
 
 source("functions.R")
 dir.create("results", showWarnings=FALSE)
-runSimulation(paste0("results/gaussclust-%s-%s.txt", NPOPS, SD), FUN)
+runSimulation(sprintf("results/gaussclust-%s-%s.txt", NPOPS, SD), FUN)
