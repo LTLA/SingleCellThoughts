@@ -1,28 +1,38 @@
 # Setting up a function that decides how many PCs to remove.
 
 library(scran)
-library(limma)
 
-computeAllMetrics <- function(svd.out, center, truth, design, upper=50) {
-    bias <- numeric(upper)
-    rss <- numeric(upper)
+computeAllMetrics <- function(truth, iterations=200, upper=50) {
+    fitted <- as.list(numeric(upper))
     mse <- numeric(upper)
-    running.recon <- 0
 
+    for (it in seq_len(iterations)) {
+        observed <- truth + rnorm(length(truth))
+        center <- rowMeans(observed)
+        svd.out <- svd(t(observed - center), nu=upper, nv=upper)
+        running.recon <- 0
+
+        for (N in seq_len(upper)) {
+            current <- outer(svd.out$v[,N] * svd.out$d[N], svd.out$u[,N])
+            running.recon <- running.recon + current
+            full.recon <- running.recon + center 
+        
+            mse[N] <- mse[N] + mean((full.recon - truth)^2)
+            fitted[[N]] <- fitted[[N]] + full.recon
+        }
+    }
+
+    mse <- mse/iterations
+    bias <- numeric(upper)
     for (N in seq_len(upper)) {
-        current <- outer(svd.out$v[,N] * svd.out$d[N], svd.out$u[,N])
-        running.recon <- running.recon + current
-        full.recon <- running.recon + center  
-        fit <- lmFit(full.recon, design)
-        bias[N] <- mean((fit$coefficients %*% t(design) - truth)^2)
-        rss[N] <- mean(fit$sigma^2)    
-        mse[N] <- mean((full.recon - truth)^2)
+        fitted[[N]] <- fitted[[N]]/iterations
+        bias[N] <- mean((fitted[[N]] - truth)^2)
     }
     
-    return(data.frame(Bias=bias, Variance=rss, MSE=mse))
+    return(data.frame(Bias=bias, Variance=mse-bias, MSE=mse))
 }
 
-assessPCA <- function(observed, truth, design)
+chooseNumber <- function(observed, truth)
 # Assessing each strategy to choose the number of PCs.
 { 
     center <- rowMeans(observed)
@@ -47,13 +57,9 @@ assessPCA <- function(observed, truth, design)
 
     # A quick-and-dirty threshold on the upper bound on random eigenvalues.
     top.var <- colMeans(attr(parallel, "permuted.percentVar"))[1]
-    upper <- sum(attr(parallel, "percentVar") > top.var)
+    upper <- max(1L, sum(attr(parallel, "percentVar") > top.var))
 
-    # Assessing all PC numbers.
-    swept <- computeAllMetrics(SVD, center, truth, design)
-    optimal <- which.min(swept$MSE)
-
-    return(list(metrics=swept, retained=data.frame(denoised=denoised, parallel=parallel, upper=upper, optimal=optimal)))
+    return(data.frame(denoised=denoised, parallel=parallel, upper=upper))
 }
 
 runSimulation <- function(fname, FUN, iters=10) 
@@ -68,34 +74,38 @@ runSimulation <- function(fname, FUN, iters=10)
     for (ncells in c(200, 1000)) {
         for (ngenes in c(1000, 5000)) {
             for (affected in c(0.2, 0.5, 1)) { 
-                cur.stats <- cur.n <- NULL 
+                cur.stats <- cur.retained <- NULL 
 
                 for (it in seq_len(iters)) {
-                    out <- FUN(ngenes*affected, ncells)
-                    truth <- rbind(out$truth, matrix(0, ncol=ncells, nrow=(1-affected)*ngenes))
-                    y <- matrix(rnorm(ngenes*ncells, mean=truth), ncol=ncells)
-                    assessed <- assessPCA(y, truth, out$design)
+                    truth <- FUN(ngenes*affected, ncells)
+                    truth <- rbind(truth, matrix(0, ncol=ncells, nrow=(1-affected)*ngenes))
+                    metrics <- computeAllMetrics(truth)
+
+                    y <- truth + rnorm(length(truth))
+                    retained <- chooseNumber(y, truth)
 
                     if (it==1L) {
-                        cur.stats <- assessed$metrics
-                        cur.n <- assessed$retained
+                        cur.stats <- metrics
+                        cur.retained <- retained
                     } else {
-                        cur.stats <- cur.stats + assessed$metrics
-                        cur.n <- cur.n + assessed$retained
+                        cur.stats <- cur.stats + metrics
+                        cur.retained <- cur.retained + retained
                     }
                 }
 
-                cur.n <- cur.n/iters
+                cur.retained <- cur.retained/iters
                 cur.stats <- cur.stats/iters
 
                 scenarios[[counter]] <- data.frame(Ncells=ncells, Ngenes=ngenes, Prop.DE=affected)
                 statistics[[counter]] <- cur.stats
-                numbers[[counter]] <- cur.n
+                numbers[[counter]] <- cur.retained
                 counter <- counter + 1L
             }
         }
     }
 
+    scenarios <- do.call(rbind, scenarios)
+    numbers <- do.call(rbind, numbers)
     saveRDS(file=fname, list(scenarios=scenarios, statistics=statistics, retained=numbers))
     return(NULL)
 }

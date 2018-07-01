@@ -9,8 +9,7 @@ if (!exists("SD")) SD <- 1
 FUN <- function(ngenes, ncells) {
     in.pop <- sample(NPOPS, ncells, replace=TRUE)
     pop.mean <- matrix(rnorm(NPOPS * ngenes, sd=SD), ncol=NPOPS)
-    truth <- pop.mean[,in.pop,drop=FALSE]
-    return(list(truth=truth, design=model.matrix(~factor(in.pop))))
+    pop.mean[,in.pop,drop=FALSE]
 }
 
 source("functions.R")
