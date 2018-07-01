@@ -3,20 +3,31 @@
 library(scran)
 library(limma)
 
-assessAccuracy <- function(n, svd.out, center, truth)
-# Computing the MSE of the reconstruction with a given number of PCs. 
-{
-    out <- svd.out$u[,1:n] %*% (svd.out$d[1:n] * t(svd.out$v[,1:n])) 
-    out <- t(out) + center
-    mean((out-truth)^2)
+computeAllMetrics <- function(svd.out, center, truth, design, upper=50) {
+    bias <- numeric(upper)
+    rss <- numeric(upper)
+    mse <- numeric(upper)
+    running.recon <- 0
+
+    for (N in seq_len(upper)) {
+        current <- outer(svd.out$v[,N] * svd.out$d[N], svd.out$u[,N])
+        running.recon <- running.recon + current
+        full.recon <- running.recon + center  
+        fit <- lmFit(full.recon, design)
+        bias[N] <- mean((fit$coefficients %*% t(design) - truth)^2)
+        rss[N] <- mean(fit$sigma^2)    
+        mse[N] <- mean((full.recon - truth)^2)
+    }
+    
+    return(data.frame(Bias=bias, Variance=rss, MSE=mse))
 }
 
-assessPCA <- function(observed, truth) 
+assessPCA <- function(observed, truth, design)
 # Assessing each strategy to choose the number of PCs.
 { 
     center <- rowMeans(observed)
-    x <- svd(t(observed - center))
-    prog.var <- x$d^2 / (ncol(observed) - 1) 
+    SVD <- svd(t(observed - center))
+    prog.var <- SVD$d^2 / (ncol(observed) - 1) 
     total.var <- sum(prog.var)
 
 ## Too unstable to fluctuations!
@@ -38,49 +49,53 @@ assessPCA <- function(observed, truth)
     top.var <- colMeans(attr(parallel, "permuted.percentVar"))[1]
     upper <- sum(attr(parallel, "percentVar") > top.var)
 
-    # Assessing each method.
-    d.res <- assessAccuracy(denoised, x, center, truth)
-    p.res <- assessAccuracy(parallel, x, center, truth)
-    u.res <- assessAccuracy(upper, x, center, truth)
+    # Assessing all PC numbers.
+    swept <- computeAllMetrics(SVD, center, truth, design)
+    optimal <- which.min(swept$MSE)
 
-    # Finding the optimal number of PCs.
-    collected <- numeric(100)
-    running <- 0
-    for (i in seq_along(collected)) { 
-        running <- running + x$u[,i,drop=FALSE] %*% (x$d[i] * t(x$v[,i,drop=FALSE]))
-        collected[i] <- mean((t(running) + center - truth)^2)
-    }
-    optimal <- which.min(collected)
-
-    return(list(N.denoised=denoised, MSE.denoised=d.res,
-                N.parallel=parallel, MSE.parallel=p.res,
-                N.upper=upper, MSE.upper=u.res,
-                N.optimal=optimal, MSE.optimal=collected[optimal]))
+    return(list(metrics=swept, retained=data.frame(denoised=denoised, parallel=parallel, upper=upper, optimal=optimal)))
 }
 
-runSimulation <- function(fname, FUN) 
+runSimulation <- function(fname, FUN, iters=10) 
 # A convenience function to run simulations based on a function that 
 # generates a matrix of true signal.
 {
-    new.file <- TRUE
+    scenarios <- list()
+    statistics <- list()
+    numbers <- list()
+    counter <- 1L
+
     for (ncells in c(200, 1000)) {
         for (ngenes in c(1000, 5000)) {
             for (affected in c(0.2, 0.5, 1)) { 
+                cur.stats <- cur.n <- NULL 
 
-                collected <- vector("list", 10)
-                for (it in 1:10) {
-                    truth <- FUN(ngenes*affected, ncells)
-                    truth <- rbind(truth, matrix(0, ncol=ncells, nrow=(1-affected)*ngenes))
+                for (it in seq_len(iters)) {
+                    out <- FUN(ngenes*affected, ncells)
+                    truth <- rbind(out$truth, matrix(0, ncol=ncells, nrow=(1-affected)*ngenes))
                     y <- matrix(rnorm(ngenes*ncells, mean=truth), ncol=ncells)
-                    collected[[it]] <- assessPCA(y, truth)
+                    assessed <- assessPCA(y, truth, out$design)
+
+                    if (it==1L) {
+                        cur.stats <- assessed$metrics
+                        cur.n <- assessed$retained
+                    } else {
+                        cur.stats <- cur.stats + assessed$metrics
+                        cur.n <- cur.n + assessed$retained
+                    }
                 }
 
-                collected <- lapply(do.call(mapply, c(collected, list(FUN=c, SIMPLIFY=FALSE))), mean)
-                write.table(file=fname, data.frame(Ncells=ncells, Ngenes=ngenes, Prop.DE=affected, collected), 
-                    sep="\t", quote=FALSE, row.names=FALSE, col.names=new.file, append=!new.file)
-                new.file <- FALSE
+                cur.n <- cur.n/iters
+                cur.stats <- cur.stats/iters
+
+                scenarios[[counter]] <- data.frame(Ncells=ncells, Ngenes=ngenes, Prop.DE=affected)
+                statistics[[counter]] <- cur.stats
+                numbers[[counter]] <- cur.n
+                counter <- counter + 1L
             }
         }
     }
+
+    saveRDS(file=fname, list(scenarios=scenarios, statistics=statistics, retained=numbers))
     return(NULL)
 }
