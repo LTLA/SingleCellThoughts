@@ -14,4 +14,4 @@ FUN <- function(ngenes, ncells) {
 
 source("functions.R")
 dir.create("results", showWarnings=FALSE)
-runSimulation(sprintf("results/gaussclust-%s-%s.rds", NPOPS, SD), FUN, iters=2)
+runSimulation(sprintf("results/gaussclust-%s-%s.rds", NPOPS, SD), FUN, iters=10)

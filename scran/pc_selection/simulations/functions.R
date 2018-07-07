@@ -2,34 +2,14 @@
 
 library(scran)
 
-computeAllMetrics <- function(truth, iterations=200, upper=50) {
-    fitted <- as.list(numeric(upper))
-    mse <- numeric(upper)
-
-    for (it in seq_len(iterations)) {
-        observed <- truth + rnorm(length(truth))
-        center <- rowMeans(observed)
-        svd.out <- svd(t(observed - center), nu=upper, nv=upper)
-        running.recon <- 0
-
-        for (N in seq_len(upper)) {
-            current <- outer(svd.out$v[,N] * svd.out$d[N], svd.out$u[,N])
-            running.recon <- running.recon + current
-            full.recon <- running.recon + center 
-        
-            mse[N] <- mse[N] + mean((full.recon - truth)^2)
-            fitted[[N]] <- fitted[[N]] + full.recon
-        }
+computeMSE <- function(svd.out, center, truth, ncomponents=100) {
+    running <- 0
+    collected <- numeric(ncomponents)
+    for (i in seq_along(collected)) { 
+        running <- running + svd.out$u[,i,drop=FALSE] %*% (svd.out$d[i] * t(svd.out$v[,i,drop=FALSE]))
+        collected[i] <- mean((t(running) + center - truth)^2)
     }
-
-    mse <- mse/iterations
-    bias <- numeric(upper)
-    for (N in seq_len(upper)) {
-        fitted[[N]] <- fitted[[N]]/iterations
-        bias[N] <- mean((fitted[[N]] - truth)^2)
-    }
-    
-    return(data.frame(Bias=bias, Variance=mse-bias, MSE=mse))
+    return(collected)
 }
 
 chooseNumber <- function(observed, truth)
@@ -48,18 +28,29 @@ chooseNumber <- function(observed, truth)
 #    retained <- min(which(tech.var > estimated.contrib))
 
     # Using our denoising approach.
-    tech.var <- sum(apply(observed - truth, 1, var))
+    tech.comp <- apply(observed - truth, 1, var)
+    tech.var <- sum(tech.comp)
     denoised <- scran:::.get_npcs_to_keep(prog.var, tech.var)
     
     # Applying parallel analysis.
-    approximate <- ncol(observed)>=500
-    parallel <- parallelPCA(observed, BPPARAM=MulticoreParam(3), value="n", approximate=approximate, min.rank=1)
+    parallel <- parallelPCA(observed, BPPARAM=MulticoreParam(3), value="n", approximate=TRUE, min.rank=1)
 
     # A quick-and-dirty threshold on the upper bound on random eigenvalues.
     top.var <- colMeans(attr(parallel, "permuted.percentVar"))[1]
     upper <- max(1L, sum(attr(parallel, "percentVar") > top.var))
 
-    return(data.frame(denoised=denoised, parallel=parallel, upper=upper))
+    # Applying the Gavish-Donoho method.
+    m <- min(dim(observed))
+    n <- max(dim(observed))
+    beta <- m/n
+    lambda <- sqrt( 2 * (beta + 1) + (8 * beta) / ( beta + 1 + sqrt(beta^2 + 14 * beta + 1) ) )
+    gv <- sum(SVD$d > lambda * sqrt(n) * mean(tech.comp))
+
+    # Determining the MSE at each step.
+    mse <- computeMSE(SVD, center, truth)
+    optimal <- which.min(mse)
+
+    return(list(MSE=mse, retained=data.frame(denoised=denoised, parallel=parallel, upper=upper, gavish=gv, optimal=optimal)))
 }
 
 runSimulation <- function(fname, FUN, iters=10) 
@@ -74,27 +65,25 @@ runSimulation <- function(fname, FUN, iters=10)
     for (ncells in c(200, 1000)) {
         for (ngenes in c(1000, 5000)) {
             for (affected in c(0.2, 0.5, 1)) { 
-                cur.stats <- cur.retained <- NULL 
+                cur.mse <- cur.retained <- NULL 
 
                 for (it in seq_len(iters)) {
                     truth <- FUN(ngenes*affected, ncells)
                     truth <- rbind(truth, matrix(0, ncol=ncells, nrow=(1-affected)*ngenes))
-                    metrics <- computeAllMetrics(truth)
-
                     y <- truth + rnorm(length(truth))
-                    retained <- chooseNumber(y, truth)
+                    out <- chooseNumber(y, truth)
 
                     if (it==1L) {
-                        cur.stats <- metrics
-                        cur.retained <- retained
+                        cur.stats <- out$MSE
+                        cur.retained <- out$retained
                     } else {
-                        cur.stats <- cur.stats + metrics
-                        cur.retained <- cur.retained + retained
+                        cur.stats <- cur.stats + out$MSE
+                        cur.retained <- cur.retained + out$retained
                     }
                 }
 
-                cur.retained <- cur.retained/iters
                 cur.stats <- cur.stats/iters
+                cur.retained <- cur.retained/iters
 
                 scenarios[[counter]] <- data.frame(Ncells=ncells, Ngenes=ngenes, Prop.DE=affected)
                 statistics[[counter]] <- cur.stats
