@@ -53,14 +53,19 @@ chooseNumber <- function(observed, truth)
     return(list(MSE=mse, retained=data.frame(denoised=denoised, parallel=parallel, upper=upper, gavish=gv, optimal=optimal)))
 }
 
-runSimulation <- function(fname, FUN, iters=10) 
-# A convenience function to run simulations based on a function that 
-# generates a matrix of true signal.
+runSimulation <- function(fname, truth.FUN, iters=10, observed.FUN=NULL)
+# A convenience function to run simulations based on a function that generates a matrix of true signal.
 {
     scenarios <- list()
     statistics <- list()
     numbers <- list()
     counter <- 1L
+
+    if (is.null(observed.FUN)) {
+        observed.FUN <- function(truth) {
+            truth + rnorm(length(truth))
+        }
+    }
 
     for (ncells in c(200, 1000)) {
         for (ngenes in c(1000, 5000)) {
@@ -68,9 +73,9 @@ runSimulation <- function(fname, FUN, iters=10)
                 cur.mse <- cur.retained <- NULL 
 
                 for (it in seq_len(iters)) {
-                    truth <- FUN(ngenes*affected, ncells)
+                    truth <- truth.FUN(ngenes*affected, ncells)
                     truth <- rbind(truth, matrix(0, ncol=ncells, nrow=(1-affected)*ngenes))
-                    y <- truth + rnorm(length(truth))
+                    y <- observed.FUN(truth)
                     out <- chooseNumber(y, truth)
 
                     if (it==1L) {
