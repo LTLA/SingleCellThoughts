@@ -37,7 +37,7 @@ chooseNumber <- function(observed, truth)
 
     # A quick-and-dirty threshold on the upper bound on random eigenvalues.
     top.var <- colMeans(attr(parallel, "permuted.percentVar"))[1]
-    upper <- max(1L, sum(attr(parallel, "percentVar") > top.var))
+    upper <- sum(attr(parallel, "percentVar") > top.var)
 
     # Applying the Gavish-Donoho method.
     m <- min(dim(observed))
