@@ -33,11 +33,14 @@ chooseNumber <- function(observed, truth)
     denoised <- scran:::.get_npcs_to_keep(prog.var, tech.var)
     
     # Applying parallel analysis.
-    parallel <- parallelPCA(observed, BPPARAM=MulticoreParam(3), value="n", approximate=TRUE, min.rank=1)
+    approximate <- ncol(truth) > 500
+    parallel <- parallelPCA(observed, BPPARAM=MulticoreParam(3), value="n", approximate=approximate, min.rank=1)
 
-    # A quick-and-dirty threshold on the upper bound on random eigenvalues.
-    top.var <- colMeans(attr(parallel, "permuted.percentVar"))[1]
-    upper <- sum(attr(parallel, "percentVar") > top.var)
+    # Using the Marchenko-Pastur limit (following Mathematica's advice).
+    library(RMTstat)
+    ndf <- nrow(observed) - 1
+    limit <- qmp(1, ndf=ndf, pdim=ncol(observed)) * mean(tech.comp)
+    marchenko <- sum(SVD$d^2/ndf > limit)
 
     # Applying the Gavish-Donoho method.
     m <- min(dim(observed))
@@ -50,7 +53,7 @@ chooseNumber <- function(observed, truth)
     mse <- computeMSE(SVD, center, truth)
     optimal <- which.min(mse)
 
-    return(list(MSE=mse, retained=data.frame(denoised=denoised, parallel=parallel, upper=upper, gavish=gv, optimal=optimal)))
+    return(list(MSE=mse, retained=data.frame(denoised=denoised, parallel=parallel, marchenko=marchenko, gavish=gv, optimal=optimal)))
 }
 
 runSimulation <- function(fname, truth.FUN, iters=10, observed.FUN=NULL)
