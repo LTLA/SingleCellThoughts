@@ -18,4 +18,4 @@ FUN <- function(ngenes, ncells) {
 
 source("functions.R")
 dir.create("results", showWarnings=FALSE)
-runSimulation(sprintf("results/gaussbasis-%s-%s.txt", NPOPS, SD), FUN)
+runSimulation(sprintf("results/trajectory-%s-%s.rds", NPOPS, SD), FUN)
