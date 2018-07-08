@@ -19,7 +19,7 @@ runSimulation(sprintf("results/genevar-%s-%s.rds", NPOPS, SD),
     truth.FUN=FUN, 
     iters=10,
     observed.FUN=function(truth) {
-        sd <- rexp(nrow(truth), 1)
+        sd <- sqrt(rgamma(nrow(truth), 2, 2)) 
         truth + rnorm(length(truth), mean=truth, sd=sd)  
     }
 )
