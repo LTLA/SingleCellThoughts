@@ -143,6 +143,24 @@ Another complication is that normalized counts from libraries of different sizes
 The mean-variance relationship is quite different for normalized counts derived from small or large libraries; 
 this will affect the accuracy of any permutation test, even for the first eigenvalue where the proportion is ostensibly interpretable as a $p$-value.
 
+\section{Using the Marchenko-Pastur limit}
+The Marchenko-Pastur law describes the asymptotic distribution of singular values for a large rectangular matrix containing i.i.d.\ random variables.
+This distribution has a strict upper bound that could theoretically be used as a threshold on the number of PCs to retain.
+To justify this procedure, we assume that our rectangular expression matrix can be written as $Y = T + X$, 
+where $T$ is a $r$-rank matrix of true signal and $X$ is a matrix of i.i.d.\ noise.
+We further assume that the first $r$ eigenvectors of the covariance matrix are exactly linear combinations of the $r$ basis vectors of $T$,
+i.e., the additional noise due to $X$ does not affect the identification of the true basis vectors.
+This means that, once the first $r$ eigenvectors are regressed out of $Y$, the residual matrix is equal to $R$.
+Thus, we can determine $r$ by taking all PCs with singular values greater than the Marchenko-Pastur limit for $R$.
+
+Needless to say, both of the above assumptions are dubious.
+The first $r$ basis vectors will rarely be well-represented by the first $r$ eigenvectors in noisy datasets.
+Instead, some of the variance in the first $r$ basis vectors will be captured by the $>r$ eigenvectors.
+This generally results in an overstatement of the number of PCs to retain as the later singular values will be increased above the Marchenko-Pastur limit.
+Similarly, the assumption of i.i.d.\ noise does not hold in real scRNA-seq data where the technical component varies with the mean.
+If there are a few features with high variability, the first singular value of $R$ will be greater than expected by the Marchenko-Pastur law.
+This again results in overstatement of the number of retained PCs if the Marchenko-Pastur limit is used. 
+
 \section{Simulation results}
 We assessed the performance of our two methods using simulated data with known clusters (see \texttt{simulations/}).
 For each pair of clusters, we quantified their separation in the PC space of the chosen dimensions,
