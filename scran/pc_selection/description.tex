@@ -34,6 +34,7 @@ Decreasing the number of dimensions also reduces computational work, which is es
 The challenge here is how to choose an appropriate number of PCs.
 
 \section{Based on technical noise}
+\label{sec:noise}
 
 \subsection{Description of method}
 
@@ -170,23 +171,24 @@ For example, small biological components will be strongly amplified if the corre
 This is not desirable as such genes were not originally driving heterogeneity in the data.
 
 \section{Using the Gavish-Donoho method}
-Gavish and Donoho (2013) describe a method for determining the optimal threshold for the singular value, above which all components should be retained.
-Optimality is defined from the accuracy of a low-rank reconstruction of the true signal using components identified from the data.
-Bias dominates if there are too few components, while variance dominates if there are unnecessarily many components.
-Their method assumes i.i.d.\ noise with a constant standard deviation - see comments above.
+Gavish and Donoho (2013) describe a method for determining the optimal threshold for the singular values, above which all components should be retained.
+Optimality is defined in terms of accuracy of the low-rank reconstruction from the retained components -- see Section~\ref{sec:simulations} for more details.
+Their method assumes i.i.d.\ noise with a constant standard deviation, so many of the considerations described above for the Marchenko-Pastur method also apply here.
+In particular, we can use the mean technical component to provide a practical estimate of the constant noise for calculation of the threshold.
 
 \section{Simulation results}
-We assessed the performance of our two methods using simulated data with known clusters (see \texttt{simulations/}).
-For each pair of clusters, we quantified their separation in the PC space of the chosen dimensions,
-by computing the proportion of variance explained (PVE) by the cluster identity (only using cells in that pair of clusters).
-We compared methods in terms of their ability to separate all pairs of clusters, using the smallest PVE;
-and their average cluster separation, using the median PVE.
+\label{sec:simulations}
+We assessed the performance of these methods using a variety of simulations (see \verb!simulations!).
+Recall that our aim is to achieve dimensionality reduction and denoising, not to interpret the individual components or factors.
+Thus, we are only concerned with obtaining an accurate estimate of the true signal matrix, using low-rank approximations of varying rank from the PCA.
+Accuracy is assessed by computing the mean squared error (MSE) of the low-rank reconstruction from the known true signal.
+The MSE is useful as an overall measure of accuracy as it combines the error due to bias, which decreases with more components; and loss of precision, which increases with more components.
 
-The two methods are generally similar in behaviour, though parallel analysis retains more PCs than the technical noise-based method in noisy data sets.
-Parallel analysis yields larger minimum PVEs due to the retention of later PCs that capture weak differences between poorly-separated clusters.
-However, the average cluster separation is often poorer, probably due to the retention of more random noise with later PCs.
-Both methods are better than using all PCs in most simulation scenarios.
-Whether average or minimum separation should be maximized depends on the intended resolution of the study.
+The Gavish-Donoho method is the best performer (i.e., minimizes the MSE) when the technical noise is constant or moderately variable across genes, as theoretically expected.
+When noise is highly variable across genes, the Gavish-Donoho method seems to strongly underestimate the number of components.
+Parallel analysis and the Marchenko-Pastur method routinely overestimate the number of components to retain.
+By comparison, our noise-based method in Section~\ref{sec:noise} typically underestimates the number of components - this is again expected, as we are computing a lower bound.
+While it is often suboptimal, our method does provide reasonably stable performance in multiple conditions.
 
 We note that, in practice, the technical noise-based method is much more convenient, requiring only an estimate of the technical noise for each gene.
 It is time-consuming to repeat PCAs for sufficient permutations to characterize the distribution of $\omega^2_l$, especially for large matrices.
