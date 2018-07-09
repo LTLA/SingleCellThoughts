@@ -69,9 +69,11 @@ However, it likely will result in some overestimation of the biological noise an
 
 \subsection{Justifying the lower bound} 
 The choice of $k$ is a lower bound as it assumes that the first $k$ PCs contain \textit{only} biological variability.
-However, even for the earliest PCs, the loading vector will capture some aspect of the technical noise that happens to be parallel to the biological subspace.
-This means that the variance explained by these PCs will contain a non-zero technical component.
+This will not be true as, even for the earliest PCs, the rotation vector will capture some aspect of the technical noise that happens to be parallel to the biological subspace.
+Thus, the variance explained by these PCs will contain a non-zero technical component.
 Conversely, some of the biological variability must be explained by later PCs, as it cannot be fully accounted for in the first $k$ PCs.
+While an accurate estimate of the rank of the underlying biological subspace would be preferable, a lower bound is still useful for denoising purposes,
+as it specifies the minimum number of PCs that should be retained.
 
 When the technical noise is high, the loading vector can be skewed to capture the largest components of the noise.
 This means that the earlier PCs tend to have the largest technical components, even though they also capture the biological signal.
