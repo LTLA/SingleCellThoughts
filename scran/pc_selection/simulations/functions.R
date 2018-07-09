@@ -81,8 +81,9 @@ runSimulation <- function(prefix, truth.FUN, iters=10, observed.FUN=NULL)
                     }
                 }
 
+                is.first <- counter==1L
                 write.table(data.frame(Ncells=ncells, Ngenes=ngenes, Prop.DE=affected, cur.retained/iters), 
-                    file=fname, append=(counter > 1L), col.names=(counter==1L), quote=FALSE, sep="\t")
+                    file=fname, append=!is.first, col.names=is.first, row.names=FALSE, quote=FALSE, sep="\t")
 
                 statistics[[counter]] <- cur.stats/iters
                 counter <- counter + 1L
