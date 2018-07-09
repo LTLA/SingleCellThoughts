@@ -12,20 +12,13 @@ computeMSE <- function(svd.out, center, truth, ncomponents=100) {
     return(collected)
 }
 
-chooseNumber <- function(observed, truth)
+chooseNumber <- function(observed, truth, max.rank=50)
 # Assessing each strategy to choose the number of PCs.
 { 
     center <- rowMeans(observed)
-    SVD <- svd(t(observed - center))
+    SVD <- svd(t(observed - center), nu=max.rank, nv=max.rank)
     prog.var <- SVD$d^2 / (ncol(observed) - 1) 
     total.var <- sum(prog.var)
-
-## Too unstable to fluctuations!
-#    npcs <- length(prog.var)
-#    flipped.prog.var <- rev(prog.var)
-#    estimated.contrib <- cumsum(flipped.prog.var) + flipped.prog.var * (npcs:1 - 1L)
-#    estimated.contrib <- rev(estimated.contrib)
-#    retained <- min(which(tech.var > estimated.contrib))
 
     # Using our denoising approach.
     tech.comp <- apply(observed - truth, 1, var)
@@ -33,8 +26,7 @@ chooseNumber <- function(observed, truth)
     denoised <- scran:::.get_npcs_to_keep(prog.var, tech.var)
     
     # Applying parallel analysis.
-    approximate <- ncol(truth) > 500
-    parallel <- parallelPCA(observed, BPPARAM=MulticoreParam(3), value="n", approximate=approximate, min.rank=1)
+    parallel <- parallelPCA(observed, BPPARAM=MulticoreParam(3), value="n", approximate=TRUE, min.rank=1, max.rank=max.rank)
 
     # Using the Marchenko-Pastur limit (following Mathematica's advice).
     library(RMTstat)
@@ -50,18 +42,17 @@ chooseNumber <- function(observed, truth)
     gv <- sum(SVD$d > lambda * sqrt(n) * mean(tech.comp))
 
     # Determining the MSE at each step.
-    mse <- computeMSE(SVD, center, truth)
+    mse <- computeMSE(SVD, center, truth, ncomponents=max.rank)
     optimal <- which.min(mse)
 
     return(list(MSE=mse, retained=data.frame(denoised=denoised, parallel=parallel, marchenko=marchenko, gavish=gv, optimal=optimal)))
 }
 
-runSimulation <- function(fname, truth.FUN, iters=10, observed.FUN=NULL)
+runSimulation <- function(prefix, truth.FUN, iters=10, observed.FUN=NULL)
 # A convenience function to run simulations based on a function that generates a matrix of true signal.
 {
-    scenarios <- list()
+    fname <- paste0(prefix, ".txt")
     statistics <- list()
-    numbers <- list()
     counter <- 1L
 
     if (is.null(observed.FUN)) {
@@ -90,19 +81,35 @@ runSimulation <- function(fname, truth.FUN, iters=10, observed.FUN=NULL)
                     }
                 }
 
-                cur.stats <- cur.stats/iters
-                cur.retained <- cur.retained/iters
+                write.table(data.frame(Ncells=ncells, Ngenes=ngenes, Prop.DE=affected, cur.retained/iters), 
+                    file=fname, append=(counter > 1L), col.names=(counter==1L), quote=FALSE, sep="\t")
 
-                scenarios[[counter]] <- data.frame(Ncells=ncells, Ngenes=ngenes, Prop.DE=affected)
-                statistics[[counter]] <- cur.stats
-                numbers[[counter]] <- cur.retained
+                statistics[[counter]] <- cur.stats/iters
                 counter <- counter + 1L
             }
         }
     }
 
-    scenarios <- do.call(rbind, scenarios)
-    numbers <- do.call(rbind, numbers)
-    saveRDS(file=fname, list(scenarios=scenarios, statistics=statistics, retained=numbers))
+    saveRDS(file=paste0(fname, ".rds"), statistics)
     return(NULL)
+}
+
+addNoise <- function(variance) 
+# Adding noise with different strategies, with different variation of technical noise across genes.
+{
+    if (variance=="none") {
+        function(truth) truth + rnorm(length(truth))
+    } else if (variance=="moderate") {
+        function(truth) {
+            sd <- sqrt(rgamma(nrow(truth), 2, 2)) 
+            truth + rnorm(length(truth), sd=sd)
+        }
+    } else if (variance=="high") {
+        function(truth) {
+            sd <- sqrt(runif(nrow(truth), 0, 6))
+            truth + rnorm(length(truth), sd=sd)
+        }
+    } else {
+        stop("unknown variance mode")
+    }
 }
