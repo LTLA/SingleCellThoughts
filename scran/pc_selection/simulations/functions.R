@@ -91,7 +91,7 @@ runSimulation <- function(prefix, truth.FUN, iters=10, observed.FUN=NULL)
         }
     }
 
-    saveRDS(file=paste0(fname, ".rds"), statistics)
+    saveRDS(file=paste0(prefix, ".rds"), statistics)
     return(NULL)
 }
 
