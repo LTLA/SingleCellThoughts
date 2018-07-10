@@ -28,18 +28,20 @@ chooseNumber <- function(observed, truth, max.rank=50)
     # Applying parallel analysis.
     parallel <- parallelPCA(observed, BPPARAM=MulticoreParam(3), value="n", approximate=TRUE, min.rank=1, max.rank=max.rank)
 
-    # Using the Marchenko-Pastur limit (following Mathematica's advice).
+    # Using the Marchenko-Pastur limit on the _eigenvalues_.
+    # (See https://www.wolfram.com/language/11/random-matrices/marchenko-pastur-distribution.html?product=mathematica)
+    # Multiplying the limit by the mean technical component of the variance to account for scaling.
     library(RMTstat)
     ndf <- nrow(observed) - 1
     limit <- qmp(1, ndf=ndf, pdim=ncol(observed)) * mean(tech.comp)
     marchenko <- sum(SVD$d^2/ndf > limit)
 
-    # Applying the Gavish-Donoho method.
+    # Applying the Gavish-Donoho method, setting the noise 'sigma' at the square root of the mean technical component.
     m <- min(dim(observed))
     n <- max(dim(observed))
     beta <- m/n
     lambda <- sqrt( 2 * (beta + 1) + (8 * beta) / ( beta + 1 + sqrt(beta^2 + 14 * beta + 1) ) )
-    gv <- sum(SVD$d > lambda * sqrt(n) * mean(tech.comp))
+    gv <- sum(SVD$d > lambda * sqrt(n) * sqrt(mean(tech.comp)))
 
     # Determining the MSE at each step.
     mse <- computeMSE(SVD, center, truth, ncomponents=max.rank)
