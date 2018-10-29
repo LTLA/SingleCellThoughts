@@ -94,38 +94,27 @@ This is because, in the latter, part of the variance in the low-abundance factor
 This is because the expression of low-abundance genes would be closer to the average in cells that have low size factors.
 Again, the difference in the variance would be larger than the variance of the differences, as one set of factors explains the variance in the other. 
 
-Both data sets here correspond mostly to scenario 1, though I imagine that this could be different.
+For example, the data set below corresponds to scenario 1, though this depends on the data set and the exact threshold in use.
 
 ```{r}
 library(scran)
 library(scater)
-sce <- readRDS("../hsc_data.rds")
+library(scRNAseq)
+
+data(allen)
+sce  <- as(allen, "SingleCellExperiment")
+counts(sce) <- assay(sce, "tophat_counts")
+
 ab <- calcAverage(sce)
 bottom <- ab < median(ab)
 summary(ab[bottom])
 summary(ab[!bottom])
-sf.low <- computeSumFactors(sce, subset.row=bottom & ab > 1, min.mean=NULL, sf.out=TRUE)
-sf.hi <- computeSumFactors(sce, subset.row=!bottom & ab > 1, min.mean=NULL, sf.out=TRUE)
+
+sf.low <- computeSumFactors(sce, subset.row=bottom, min.mean=1, sf.out=TRUE)
+sf.hi <- computeSumFactors(sce, subset.row=!bottom, min.mean=1, sf.out=TRUE)
 var(log10(sf.hi))
 var(log10(sf.low))
 var(log10(sf.hi/sf.low)) 
-
-sce2 <- readRDS("../brain_data.rds")
-ab2 <- calcAverage(sce2)
-clusters <- quickCluster(sce2, subset.row=ab2 > 0.1, method="igraph")
-bottom2 <- ab2 < quantile(ab2, 0.75)
-summary(ab2[bottom2])
-summary(ab2[!bottom2])
-sf.low2 <- computeSumFactors(sce2, subset.row=bottom2 & ab2 > 0.1, cluster=clusters, min.mean=NULL, sf.out=TRUE)
-sf.hi2 <- computeSumFactors(sce2, subset.row=!bottom2 & ab2 > 0.1, cluster=clusters, min.mean=NULL, sf.out=TRUE)
-var(log10(sf.hi2)) 
-var(log10(sf.low2))
-var(log10(sf.hi2/sf.low2)) 
-
-# In comparison, the difference between size factors and library sizes
-# still explains a fairly large proportion of the size factor variability.
-# Obviously doesn't happen in the HSC data, which is too homogeneous to care.
-var(log10(sizeFactors(sce2)/colSums(counts(sce2)))) 
 ```
 
 # Solutions to non-linearity
@@ -161,40 +150,6 @@ This is despite the fact that it should have been normalized out already.
 To get around this, we could imagine blocking on measures of total RNA content, e.g., the cellular detection rate as done in _MAST_.
 This would allow us to regress out the normalization error and avoid problems in downstream analyses.
 The obvious problem is that this may also regress out meaningful biology; see `cdr.Rmd` for details.
-
-# Non-linearities introduced by log-transformation
-
-The log-transformation does not entirely preserve linearity because normalization only corrects for scaling effects on the counts.
-The effect of the log-transformation will differ between cells with low versus high library sizes, even when the mean expression is the same.
-This is because the log-mean depends on the variance of the counts, which is different between cells with low and high coverage.
-
-In practice, this doesn't really seem to matter - if the mean log-values differ with respect to the size factor, it implies that the variance at one size factor is much larger.
-This will prevent us from resolving a misleading shift in population centers that is solely driven by the log-transformation.
-Indeed, there doesn't seem to be a strong shift even with highly disparate size factors:
-
-```{r}
-# Using a large variance where there is more likely to be a difference.
-a <- rnbinom(10000, mu=100, size=0.1)
-b <- rnbinom(10000, mu=10, size=0.1)
-mean(log2(a/sqrt(10)+1))
-mean(log2(b*sqrt(10)+1))
-
-# Not a large difference, even at 100-fold difference in coverage.
-a <- rnbinom(10000, mu=100, size=0.1)
-b <- rnbinom(10000, mu=1, size=0.1)
-mean(log2(a/10+1))
-mean(log2(b*10+1))
-
-# Shift in means is much smaller than the SD within each group:
-sd(log2(a/10+1))
-sd(log2(b*10+1))
-```
-
-Admittedly, for DE analyses, this is more troublesome as a shift in the group centers _will_ be resolved with enough cells.
-Nonetheless, the differences in the mean log-counts are still small and should not drive spurious differences to the top-ranked set of DEGs.
-The discrepancy is exacerbated if one of the groups has a much larger dispersion, but it is difficult to interpret comparisons of the mean for different distribution shapes.
-Accepting the null doesn't allow you to conclude that there is no difference between groups, 
-while borderline rejections don't guarantee that the reported sign of the shift in mean is correct!
 
 # Session information
 
