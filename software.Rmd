@@ -10,3 +10,5 @@ Brief comments:
 Links to expanded thoughts:
 
 - PC selection in https://github.com/LTLA/PCSelection2018
+- MNN correction in https://github.com/MarioniLab/FurtherMNN2018
+- Scaling normalization in https://github.com/MarioniLab/FurtherNorm2018
