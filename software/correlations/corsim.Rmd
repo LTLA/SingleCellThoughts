@@ -1,16 +1,15 @@
 ---
 title: Some thoughts on testing for correlations
 author: Aaron Lun
-date: 18 February 2017
+date: "`r Sys.Date()`"
 output:
-  html_document:
-    fig_caption: false 
+  BiocStyle::html_document:
+    toc: true
+    toc_float: true
 ---
 
 ```{r, echo=FALSE, results="hide"}
-dir.create("figure-cor", showWarning=FALSE)
-knitr::opts_chunk$set(error=FALSE, warning=FALSE, message=FALSE, fig.path="figure-cor/")
-options(width=100)
+knitr::opts_chunk$set(error=FALSE, warning=FALSE, message=FALSE)
 ```
 
 # Why use a modified rho?
@@ -20,7 +19,7 @@ It also means that we can get spuriously large correlations (which we would have
 However, this is acceptable as we can let the error-control machinery deal with the possibility of such spuriously large values.
 We also don't have to account for HVG identification in multiple testing here, because correlations are independent of the variance of the genes.
 
-```{r, eval=FALSE}
+```{r}
 library(scran)
 set.seed(1023423)
 ncells <- 100
@@ -50,10 +49,10 @@ set.seed(12120)
 design <- model.matrix(~factor(rep(1:5, 2)))
 y <- matrix(rnorm(1000, mean=rep(1:5, 5), sd=2), ncol=10, byrow=TRUE)
 null <- correlateNull(ncol(y))
-out <- correlatePairs(y, design=design, null=null)
+out <- correlatePairs(y, design=design, null=null, lower.bound=-Inf)
 plot(log10(sort(out$p.value)/1:nrow(out)*nrow(out))) # wrong
-null <- correlateNull(design=design, residuals=TRUE)
-out <- correlatePairs(y, design=design, null=null, residuals=TRUE)
+null <- correlateNull(design=design)
+out <- correlatePairs(y, design=design, null=null, lower.bound=-Inf)
 plot(log10(sort(out$p.value)/1:nrow(out)*nrow(out))) # right
 ```
 
@@ -156,15 +155,15 @@ While the _p_-values are unlikely to be accurate here, the normality assumption 
 
 ```{r}
 set.seed(1020)
-nulls <- correlateNull(design=X, iters=1e4, residuals=TRUE)
-correlatePairs(rbind(g1, g2), design=X, residuals=TRUE, null=nulls, lower.bound=NA) # Bad
-correlatePairs(rbind(g1, g2), design=X, residuals=TRUE, null=nulls, lower.bound=0) # Good
-nulls <- correlateNull(design=Y, iters=1e4, residuals=TRUE)
-correlatePairs(rbind(g3, g4), design=Y, residuals=TRUE, null=nulls, lower.bound=NA) # Bad
-correlatePairs(rbind(g3, g4), design=Y, residuals=TRUE, null=nulls, lower.bound=0) # Good
+nulls <- correlateNull(design=X, iters=1e4)
+correlatePairs(rbind(g1, g2), design=X, null=nulls, lower.bound=NA) # Bad
+correlatePairs(rbind(g1, g2), design=X, null=nulls, lower.bound=0) # Good
+nulls <- correlateNull(design=Y, iters=1e4)
+correlatePairs(rbind(g3, g4), design=Y, null=nulls, lower.bound=NA) # Bad
+correlatePairs(rbind(g3, g4), design=Y, null=nulls, lower.bound=0) # Good
 ```
 
-# Wrapping up
+# Session information 
 
 ```{r}
 sessionInfo()
