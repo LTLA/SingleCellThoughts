@@ -1,0 +1,80 @@
+---
+title: Cell cycle classification comments
+author: Aaron Lun
+date: "`r Sys.Date()`"
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r, echo=FALSE, results="hide"}
+knitr::opts_chunk$set(error=FALSE, message=FALSE, warnings=FALSE)
+library(BiocStyle)
+```
+
+# Excuses for poor performance
+
+Consider the classifier trained on gene count data for one short gene A and one long gene B.
+In G1, B is silent and A is strongly expressed, while in all other phases, B's expression is non-zero (lower molarity than A, but higher CPM due to length).
+In read count data, this gene pair would be selected as A > B in G1 and B > A in all other phases.
+However, in UMI data, this gene pair would not be informative as A > B in terms of molecule counts in all phases.
+I use gene length as an example here but similar effects are observed with mappability, sequenceability, etc.
+
+Another possible contributor to poor performance is the difference in the cells used for training and those in the test data.
+If certain expression patterns are associated with the cell cycle in the training set (of mouse embryonic stem cells), these may be incorporated into the classifier.
+However, if those patterns are not associated with the cell cycle in the test data, their inclusion will add noise without providing any phase information.
+This will lead to a deterioration in the accuracy of the classifier.
+In general, this is unlikely to be a major issue as the cell cycle should be a conserved process across many lineages and conditions.
+
+Furthermore, there may be misclassification due to a large number of cells being in G0.
+In theory, these should be closest to G1 but they may be different enough that you'd get a low G1 score, making them show up as S-like or even G2M.
+
+# Correcting for cell cycle phase 
+
+An alternative approach uses genes that have annotated functions in cell cycling and division.
+We extract all genes associated with the relevant GO terms and use them to construct a PCA plot for the brain dataset.
+Figure ((braincyclepca)) contains three clusters that may correspond to distinct phases of the cell cycle.
+This can be determined explicitly by identifying marker genes for each cluster as previously described, and checking whether each marker has known phase-specific expression with resources such as [Cyclebase](http://www.cyclebase.org) [@santos2015cyclebase].
+
+```{r, echo=FALSE, results='hide', message=FALSE, eval=FALSE}
+library(org.Mm.eg.db)
+fontsize <- theme(axis.text=element_text(size=12), axis.title=element_text(size=16))
+```
+
+```{r braincyclepca, fig.width=10, fig.height=5, fig.cap="PCA plot of the brain dataset, using only genes with annotated functions in cell cycling or division.", eval=FALSE}
+ccgenes <- select(org.Mm.eg.db, keys=c("GO:0022403", "GO:0051301"), keytype="GOALL", column="SYMBOL")
+sce <- readRDS("brain_data.rds")
+chosen.genes <- which(rownames(sce) %in% ccgenes$SYMBOL)
+plotPCA(sce, feature_set=chosen.genes) + fontsize 
+```
+
+We can also identify hidden factors of variation across the annotated genes using `r Biocpkg("RUVSeq")`.
+This assumes that, if all cells were in the same phase of the cell cycle, there should be no DE across cells for genes associated with the cell cycle.
+Any systematic differences between cells are incorporated into the `W` matrix containing the factors of unwanted variation.
+These factors can then be included as covariates in the design matrix to absorb cell cycle effects in the rest of the dataset.
+We set `k=2` here to capture the variation corresponding to the two principal components in Figure ((braincyclepca)).
+
+```{r, eval=FALSE}
+library(RUVSeq)
+ruv.out <- RUVg(exprs(sce), isLog=TRUE, cIdx=chosen.genes, k=2)
+head(ruv.out$W)
+```
+
+In general, we prefer using the `cyclone`-based approach for phase identification and blocking.
+This is because the expression of some cell cycle genes may be affected by other biological/experimental factors at the single-cell level, 
+much like how the cell cycle affects the expression of non-cell cycle genes in the first place.
+As a result, the inferred factors of variation may include interesting differences between cells, such that blocking on those factors would result in loss of detection power.
+`cyclone` calls the phase for each cell separately and is more robust to systematic (non-cell-cycle-related) differences between cells.
+
+The obvious example would be if cells in the same phase had different amounts of expression for cell cycle genes, corresponding to some other factor (e.g., treatment).
+This would get picked up as a hidden factor of variation, leading to loss of power to detect that other factor.
+In contrast, `cyclone` wouldn't care as long as the relative amounts of expression of cell cycle genes (or more robustly, their ranked expression) within each cell are unchanged.
+Using `scLVM` would also work as it would learn the interesting factors of variation and block on them to avoid them getting regressed out with cell cycle phase.
+However, that kind of model is notoriously finicky due to the large numbers of moving parts.
+
+# Session information
+
+```{r}
+sessionInfo()
+```
