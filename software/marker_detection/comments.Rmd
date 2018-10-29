@@ -8,14 +8,14 @@ output:
     toc_float: true
 ---
 
-```{r, echo=FALSE, resulst="hide"}
+```{r, echo=FALSE, results="hide"}
 knitr::opts_chunk$set(error=FALSE, message=FALSE, warnings=FALSE)
 library(BiocStyle)
 ```
 
 # Why t-tests?
 
-In versions up to 1.7.0, _scran_ used _limma_ to compute p-values for the pairwise comparisons between clusters.
+In versions up to 1.7.0, `r Biocpkg("scran")` used `r Biocpkg("limma")` to compute p-values for the pairwise comparisons between clusters.
 However, I have switched it to use Welch t-tests instead, motivated by several factors:
 
 1. Speed.
@@ -26,6 +26,12 @@ The classic example is that of a cluster with all-zero expression; a linear mode
 3. Robustness to misspecification of clusters.
 This is relevant when clusters _other than the ones being tested_ are misspecified, as their information does not get used in pairwise t-tests.
 In contrast, inflation of the sample variance would be observed with a linear model.
+
+In theory, we could perform Student's t-test in situations where there is only one cell in one of the groups.
+However, we do not do so as it is often compromised by discreteness in scRNA-seq data.
+If the group with many cells contains only zero counts, the sample variance is shrunk towards zero, which would downweight variability in expression in the other groups.
+More generally, I do not think it is possible to report a reliable p-value when there is only one observation in one group, 
+especially as the mean-variance relationship is considered.
 
 # Normality requirements, or lack thereof
 
@@ -70,7 +76,9 @@ Rather, the continued operation of the t-test is probably due to dependencies be
 This means that you are more likely to get a large mean and variance at the same time, thus cancelling out the effects of non-normality.
 The other possibility is that the variance becomes so well estimated that the t-test converges to the z-test, but I don't think we have the sample sizes for that.
 
-# Comparison to _limma_
+# Comparison to standard DE methods
+
+## Versus `r Biocpkg("limma")`
 
 The obvious downside to our use of t-tests is the loss of power from reduced information. 
 This comes in three forms:
@@ -80,7 +88,7 @@ This is because a sample variance is estimated separate for each group, rather t
 The loss of power is exacerbated when blocking is involved, where a sample variance needs to be estimated for each block/group combination.
 - Reduced residual d.f. for each gene, due to the fact that information is only used from a pair of groups. 
 In contrast, a linear model would use information across all groups to estimate the residual variance.
-- No empirical Bayes shrinkage from _limma_.
+- No empirical Bayes shrinkage from `r Biocpkg("limma")`.
 This means that we do not get any benefit from a larger total d.f. due to the contribution of the prior d.f.
 On the other hand, this avoids any funny business with the distributional assumptions of the variances, especially at low counts and with a misspecified model.
 
@@ -115,7 +123,7 @@ runT <- function(grouping, y, comp) {
 ```
 
 Running under various conditions, and having a look at the type II error rate differences at a p-value threshold of 0.1%.
-We can see that the performances of _limma_ and the t-test are comparable, though the former is consistently better by a modest degree.
+We can see that the performances of `r Biocpkg("limma")` and the t-test are comparable, though the former is consistently better by a modest degree.
 This benefit erodes as the size of the groups or differences between groups increases.
 
 ```{r}
@@ -143,54 +151,68 @@ for (ngroups in 2:4) {
 }
 ```
 
-Note that these simulations are showing _limma_ at its best, i.e., infinite prior d.f. for EB shrinkage.
+Note that these simulations are showing `r Biocpkg("limma")` at its best, i.e., infinite prior d.f. for EB shrinkage.
 In practice, the estimated prior d.f. are lower (below 10, based on communications with Charlotte Soneson).
 So we can assume that the differences in performance would be even smaller in practice.
 
-# Comparison to _edgeR_
+## Versus `voom`
 
-The use of t-tests is questionable as the normality assumption is frequently violated.
-(Performance _tends_ to be satisfactory due to the violations cancelling out between the sample mean and variance; but don't try appealing to the CLT.)
+Interestingly, direct application of _limma_ seems to be better than `voom` for this purpose.
+`voom`'s precision weighting means that only a few cells with large size factors contribute to the DE analysis.
+This is because the mean-variance trend is sharply decreasing so a small number of large cells will get very large weights.
+As a result, DE genes with high variability across the majority of cells will be highly ranked, because that variability is ignored by the model.
+
+Technically, this is correct as we shouldn't trust variability due to dropouts and other technical noise.
+However, if we want to be conservative, then we look for genes that are expressed consistently _in spite of_ the dropouts.
+This favours DE genes in which we know that expression is consistent, at the expense of genes where we don't know either way due to dropouts/noise.
+To do this, we take the log-expression values at face value and just use _limma_ without weighting.
+
+## Versus `r Biocpkg("edgeR")`
+
+The use of t-tests is unsatisfying as the normality assumption is frequently violated
+and the log-transformation distorts the log-fold changes between groups (see https://github.com/LTLA/PseudoCount2018).
 Count-based models would be preferable, aside from a few nagging problems:
 
 - They are at least an order of magnitude slower, which is exacerbated by the large number of cells.
 - The saddlepoint approximation fails at low counts and large dispersions, rendering quasi-likelihood p-values invalid.
 This was particularly problematic for earlier read count data, though it may be less of an issue for UMI data.
 
-```{r}
-library(edgeR)
-y <- matrix(rnbinom(10000*100, mu=0.1, size=1), ncol=100)
-dev <- nbinomDeviance(y, mean=matrix(0.1, nrow(y), ncol(y)), dispersion=1)
-
-# Observed moments of the deviance distribution.
-mean(dev)
-var(dev)
-
-# What they should be (100 d.f., as we're using the known mean).
-simdev <- rchisq(10000, df=100)
-mean(simdev)
-var(simdev)
-
-# And indeed, this is the case for more sane parameters.
-y <- matrix(rnbinom(10000*100, mu=100, size=10), ncol=100)
-dev <- nbinomDeviance(y, mean=matrix(100, nrow(y), ncol(y)), dispersion=0.1)
-mean(dev)
-var(dev)
-```
+    ```{r}
+    library(edgeR)
+    y <- matrix(rnbinom(10000*100, mu=0.1, size=1), ncol=100)
+    dev <- nbinomDeviance(y, mean=matrix(0.1, nrow(y), ncol(y)), dispersion=1)
+    
+    # Observed moments of the deviance distribution.
+    mean(dev)
+    var(dev)
+    
+    # What they should be (100 d.f., as we're using the known mean).
+    simdev <- rchisq(10000, df=100)
+    mean(simdev)
+    var(simdev)
+    
+    # And indeed, this is the case for more sane parameters.
+    y <- matrix(rnbinom(10000*100, mu=100, size=10), ncol=100)
+    dev <- nbinomDeviance(y, mean=matrix(100, nrow(y), ncol(y)), dispersion=0.1)
+    mean(dev)
+    var(dev)
+    ```
 
 -  They suffer from the same assumptions as linear models when fitted to the entire expression profile.
 Namely, they assume a constant dispersion and they are sensitive to cluster misspecification in the groups not being compared.
+- `r Biocpkg("edgeR")`'s dispersion estimates are bounded by the grid search and can't fully account for the variability.
+As a result, a few cells with large outlier expression end up driving the top DE calls.
+The log-transformation prior to using t-tests protects against outliers and yields better rankings, at least for read count data where amplification biases are most prevalent.
+- More generally, it is just as valid to perform DE on the log-counts as it is on the counts.
+There's no reason to think that the comparison of arithmetic means is more biologically meaningful than the comparison of (log-)geometric means.
 
-It is fairly simple to run _edgeR_ separately, so I didn't consider the need to create a wrapper for the LRT-related methods.
-It would be easy to do so, though; simply modify _findMarkers_ to accept some function that returns p-values and log-fold changes given the data and a pair of groups.
+It is fairly simple to run `r Biocpkg("edgeR")` separately, so I didn't consider the need to create a wrapper for the LRT-related methods.
+It would be easy to do so, though, by collecting all pairwise test results and supplying them to `combineMarkers`.
 
-# Welch versus Student
-
-In theory, we could perform Student's t-test in situations where there is only one cell in one of the groups.
-However, we do not do so as it is often compromised by discreteness in scRNA-seq data.
-If the group with many cells contains only zero counts, the sample variance becomes zero, which would be incorrect.
-More generally, I do not think it is possible to report a reliable p-value when there is only one observation in one group, 
-especially as the mean-variance relationship is considered.
+Note that the direct use of log-transformed counts doesn't work if you're comparing log-fold changes, e.g., for allele-specific expression.
+This is because the prior count shrinks log-fold changes towards zero at different rates depending on the abundance.
+Thus, you could get a significant difference in log-fold changes if the abundances are different, even if the true log-fold changes are the same.
+This is avoided with count-based methods - or even voom`, where the observations with low abundances (most affected by the prior count) are not considered with much weight.
 
 # Reason for using pairwise tests
 
