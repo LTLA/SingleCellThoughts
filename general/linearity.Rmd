@@ -1,3 +1,13 @@
+---
+title: Are scRNA-seq measurements linear?
+author: Aaron Lun
+date: "`r Sys.Date()`"
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_float: true
+---
+
 # Why should measurements be linear?
 
 ## Theoretical arguments
@@ -43,7 +53,7 @@ Here are several instances where this can be found:
 - Figure S11 in Lun et al. (http://dx.doi.org/10.1101/gr.222877.117)
 - Figure 2a in Hashimony et al. (https://doi.org/10.1186/s13059-016-0938-8)
 
-# Why should measurements not be linear?
+# Why should measurements _not_ be linear?
 
 ## Theoretical arguments 
 
@@ -96,9 +106,9 @@ summary(ab[bottom])
 summary(ab[!bottom])
 sf.low <- computeSumFactors(sce, subset.row=bottom & ab > 1, min.mean=NULL, sf.out=TRUE)
 sf.hi <- computeSumFactors(sce, subset.row=!bottom & ab > 1, min.mean=NULL, sf.out=TRUE)
-var(log10(sf.hi)) # 0.01557266
-var(log10(sf.low)) # 0.02057023
-var(log10(sf.hi/sf.low)) # 0.005032726
+var(log10(sf.hi))
+var(log10(sf.low))
+var(log10(sf.hi/sf.low)) 
 
 sce2 <- readRDS("../brain_data.rds")
 ab2 <- calcAverage(sce2)
@@ -108,14 +118,14 @@ summary(ab2[bottom2])
 summary(ab2[!bottom2])
 sf.low2 <- computeSumFactors(sce2, subset.row=bottom2 & ab2 > 0.1, cluster=clusters, min.mean=NULL, sf.out=TRUE)
 sf.hi2 <- computeSumFactors(sce2, subset.row=!bottom2 & ab2 > 0.1, cluster=clusters, min.mean=NULL, sf.out=TRUE)
-var(log10(sf.hi2)) # 0.1046154
-var(log10(sf.low2)) # 0.09856944
-var(log10(sf.hi2/sf.low2)) # 0.007944335
+var(log10(sf.hi2)) 
+var(log10(sf.low2))
+var(log10(sf.hi2/sf.low2)) 
 
 # In comparison, the difference between size factors and library sizes
 # still explains a fairly large proportion of the size factor variability.
 # Obviously doesn't happen in the HSC data, which is too homogeneous to care.
-var(log10(sizeFactors(sce2)/colSums(counts(sce2)))) # 0.02962633
+var(log10(sizeFactors(sce2)/colSums(counts(sce2)))) 
 ```
 
 # Solutions to non-linearity
@@ -185,3 +195,9 @@ Nonetheless, the differences in the mean log-counts are still small and should n
 The discrepancy is exacerbated if one of the groups has a much larger dispersion, but it is difficult to interpret comparisons of the mean for different distribution shapes.
 Accepting the null doesn't allow you to conclude that there is no difference between groups, 
 while borderline rejections don't guarantee that the reported sign of the shift in mean is correct!
+
+# Session information
+
+```{r}
+sessionInfo()
+```
