@@ -6,3 +6,5 @@ navbar:
       href: index.html
     - text: "General"
       href: general.html
+    - text: "Software"
+      href: software.html

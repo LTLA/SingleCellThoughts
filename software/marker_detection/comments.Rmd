@@ -1,3 +1,18 @@
+---
+title: Comments on marker detection in `r Biocpkg("scran")`
+author: Aaron Lun
+date: "`r Sys.Date()`"
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r, echo=FALSE, resulst="hide"}
+knitr::opts_chunk$set(error=FALSE, message=FALSE, warnings=FALSE)
+library(BiocStyle)
+```
+
 # Why t-tests?
 
 In versions up to 1.7.0, _scran_ used _limma_ to compute p-values for the pairwise comparisons between clusters.
@@ -17,7 +32,9 @@ In contrast, inflation of the sample variance would be observed with a linear mo
 The distributional assumptions of the Welch t-test are surprisingly unproblematic at large sample sizes.
 Consider that the following examples work pretty well:
 
-```r
+```{r}
+set.seed(12345)
+
 # On highly non-normal distributions
 p <- numeric(10000)
 for (x in seq_along(p)) {
@@ -191,3 +208,9 @@ As a side note, an alternative is to use machine learning to choose a gene set t
 This takes advantage of combinatorics but is less useful for interpretation of the differences between clusters.
 For example, LASSO methods will only pick one gene in the set if two genes are redundant.
 This results in the failure to detect a gene that might be important for characterizing the biological identity of a cluster.
+
+# Session information
+
+```{r}
+sessionInfo()
+```
