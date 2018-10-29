@@ -1,6 +1,14 @@
-# Cellular detection rate
+---
+title: "Comments on the cellular detection rate"
+author: Aaron Lun
+date: "`r Sys.Date()`"
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_float: true
+---
 
-## Arguments against
+# Arguments against
 
 The obvious argument against using the CDR is the fact that it may be confounded with condition or cell type, such that meaningful biology is regressed out.
 For example, we have observed differences in the total number of expressed features between mESCs cultured under different conditions (Kolod data).
@@ -46,7 +54,7 @@ summary(lm(y ~ g + cov))$coefficient
 summary(lm(y ~ g))$coefficient
 ```
 
-## Arguments for
+# Arguments for
 
 The main argument for using the CDR is that it mops up errors in normalization, by serving as a proxy for any leftover technical biases (see `linearity.Rmd` for comments).
 This was primarily proposed for _MAST_, though at least some of the benefit is probably due to the fact that the zeroes are modelled separately.
@@ -74,7 +82,7 @@ out <- summary(Z, n=nrow(Z), doLRT='g2')
 hist(as.numeric(out$datatable[,4][[1]]))
 ```
 
-## Use in data exploration
+# Use in data exploration
 
 Another question is whether regression on the CDR should be performed prior to data exploration, and the residuals used for PCA and clustering.
 I would suggest not, as all of the underlying factors of variation are not fully known.
@@ -111,3 +119,10 @@ r0 <- (y - fit0$fitted.value)/sqrt(fit0$fitted.value)
 pc0 <- prcomp(t(r0))
 plot(pc0$x[,1], pc0$x[,2], pch=16, col=col, main="No CDR")
 ```
+
+# Session information
+
+```{r}
+sessionInfo()
+```
+

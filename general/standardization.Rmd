@@ -5,6 +5,7 @@ date: "`r Sys.Date()`"
 output:
   BiocStyle::html_document:
     toc: true
+    toc_float: true
 bibliography: ref.bib
 ---   
 
@@ -157,3 +158,9 @@ However, by any other metric (e.g., CV^2^), the last population should be the le
 Computing distances between (standardized) counts is not informative, as the interpretation of the difference depends on the size of the counts.
 This information cannot be easily incorporated through a single scaling factor in a mixture distribution with different true abundances.
 A difference of 1 vs 10 should not have the same weight as a difference of 91 vs 100.
+
+# Session information
+
+```{r}
+sessionInfo()
+```
