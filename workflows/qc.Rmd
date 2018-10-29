@@ -1,9 +1,11 @@
 ---
-title: Comments on the quality control steps in the workflow
+title: Comments on the quality control steps
 author: Aaron Lun
+date: "`r Sys.Date()`"
 output:
   BiocStyle::html_document:
-    fig_caption: yes
+    toc: true
+    toc_float: true
 ---
 
 # Improving resolution with log-transformed QC metrics

@@ -15,26 +15,6 @@ The problem is that corrected data will not be sparse.
 The log-transformation can be sparse if the pseudo-count is 1, but if batch correction needs to be performed, that's no longer possible.
 In any case, PCA in its true form doesn't work for sparse matrices because you need to centre (though if you only use HVGs, that should be few enough to densify).
 
-# Cell cycle classification comments
-
-## Explaining poor performance on the brain data set
-
-The main reason for poor performance is probably because the training data is different from the test data.
-Consider the classifier trained on gene count data for one short gene A and one long gene B.
-In G1, B is silent and A is strongly expressed, while in all other phases, B's expression is non-zero (lower molarity than A, but higher CPM due to length).
-In read count data, this gene pair would be selected as A > B in G1 and B > A in all other phases.
-However, in UMI data, this gene pair would not be informative as A > B in terms of molecule counts in all phases.
-I use gene length as an example here but similar effects are observed with mappability, sequenceability, etc.
-
-Another possible contributor to poor performance is the difference in the cells used for training and those in the test data.
-If certain expression patterns are associated with the cell cycle in the training set (of mouse embryonic stem cells), these may be incorporated into the classifier.
-However, if those patterns are not associated with the cell cycle in the test data, their inclusion will add noise without providing any phase information.
-This will lead to a deterioration in the accuracy of the classifier.
-In general, this is unlikely to be a major issue as the cell cycle should be a conserved process across many lineages and conditions.
-
-Furthermore, there may be misclassification due to a large number of cells being in G0.
-In theory, these should be closest to G1 but they may be different enough that you'd get a low G1 score, making them show up as S-like or even G2M.
-
 # Filtering comments
 
 ## Justification in the context of HVG detection
@@ -481,33 +461,6 @@ This is because smaller cells have less stable expression and accumulate red/blu
 Obviously, if there are problems with normalization, it'll show up here as well.
 In general, these can be ignored; if they're not artifacts, then they'll be impossible to validate.
 
-## Using _limma_ instead of _edgeR_ to identify markers
-
-Much like in detecting HVGs, applying _limma_ on the log-transformed counts seems to do better than using _edgeR_ on the raw counts.
-This is because _edgeR_'s dispersion estimates are bounded by the grid search and can't fully account for the variability. 
-As a result, a few cells with large outlier expression end up driving the top DE calls.
-The log-transformation protects against outliers and seems to yield better rankings, at least for read count data where amplification biases are most prevalent.
-
-Interestingly, direct application of _limma_ seems to be better than `voom` for this purpose.
-`voom`'s precision weighting means that only a few cells with large size factors contribute to the DE analysis.
-This is because the mean-variance trend is sharply decreasing so a small number of large cells will get very large weights.
-As a result, DE genes with high variability across the majority of cells will be highly ranked, because that variability is ignored by the model.
-
-Technically, this is correct as we shouldn't trust variability due to dropouts and other technical noise.
-However, if we want to be conservative, then we look for genes that are expressed consistently _in spite of_ the dropouts.
-This favours DE genes in which we know that expression is consistent, at the expense of genes where we don't know either way due to dropouts/noise.
-To do this, we take the log-expression values at face value and just use _limma_ without weighting.
-
-More generally, it is just as valid to perform DE on the log-counts as it is on the counts.
-There's no reason to think that the comparison of arithmetic means is more meaningful than the comparison of (log-)geometric means.
-In any case, the two comparisons are equivalent when variances are low (or even if they're large and equal, under a second-order Taylor approximation).
-For large variances that differ between groups, the log-fold changes will differ but such genes are less likely to show up as strongly DE anyway.
-
-Note that the direct use of log-transformed counts doesn't work if you're comparing log-fold changes, e.g., for allele-specific expression.
-This is because the prior count shrinks log-fold changes towards zero at different rates depending on the abundance.
-Thus, you could get a significant difference in log-fold changes if the abundances are different, even if the true log-fold changes are the same.
-This is avoided with `voom` where the precision weights ensure that low abundances (most affected by the prior count) are not considered with much weight.
-
 # When to use spike-in normalization
 
 Changes in total RNA content that affect the entire transcriptome are probably functional in some sense, e.g., to support changes in cell size.
@@ -533,49 +486,6 @@ If the housekeepers do not change with total RNA content, then it's interesting;
 However, a general housekeeping set is not easy to define for use in all experimental conditions (constitutive != constant).
 For example, GAPDH and B-actin are often used in qPCR but these are DE in activation, proliferation and differentiation (PMID: 12200519).
 Even with a small set, there's always the chance that the majority of its constituents are DE, which would break the normalization procedure.
-
-# Cell cycle phase correction comments
-
-An alternative approach uses genes that have annotated functions in cell cycling and division.
-We extract all genes associated with the relevant GO terms and use them to construct a PCA plot for the brain dataset.
-Figure ((braincyclepca)) contains three clusters that may correspond to distinct phases of the cell cycle.
-This can be determined explicitly by identifying marker genes for each cluster as previously described, and checking whether each marker has known phase-specific expression with resources such as [Cyclebase](http://www.cyclebase.org) [@santos2015cyclebase].
-
-```{r, echo=FALSE, results='hide', message=FALSE, eval=FALSE}
-library(org.Mm.eg.db)
-fontsize <- theme(axis.text=element_text(size=12), axis.title=element_text(size=16))
-```
-
-```{r braincyclepca, fig.width=10, fig.height=5, fig.cap="PCA plot of the brain dataset, using only genes with annotated functions in cell cycling or division.", eval=FALSE}
-ccgenes <- select(org.Mm.eg.db, keys=c("GO:0022403", "GO:0051301"), keytype="GOALL", column="SYMBOL")
-sce <- readRDS("brain_data.rds")
-chosen.genes <- which(rownames(sce) %in% ccgenes$SYMBOL)
-plotPCA(sce, feature_set=chosen.genes) + fontsize 
-```
-
-We can also identify hidden factors of variation across the annotated genes using `r Biocpkg("RUVSeq")`.
-This assumes that, if all cells were in the same phase of the cell cycle, there should be no DE across cells for genes associated with the cell cycle.
-Any systematic differences between cells are incorporated into the `W` matrix containing the factors of unwanted variation.
-These factors can then be included as covariates in the design matrix to absorb cell cycle effects in the rest of the dataset.
-We set `k=2` here to capture the variation corresponding to the two principal components in Figure ((braincyclepca)).
-
-```{r, eval=FALSE}
-library(RUVSeq)
-ruv.out <- RUVg(exprs(sce), isLog=TRUE, cIdx=chosen.genes, k=2)
-head(ruv.out$W)
-```
-
-In general, we prefer using the `cyclone`-based approach for phase identification and blocking.
-This is because the expression of some cell cycle genes may be affected by other biological/experimental factors at the single-cell level, 
-much like how the cell cycle affects the expression of non-cell cycle genes in the first place.
-As a result, the inferred factors of variation may include interesting differences between cells, such that blocking on those factors would result in loss of detection power.
-`cyclone` calls the phase for each cell separately and is more robust to systematic (non-cell-cycle-related) differences between cells.
-
-The obvious example would be if cells in the same phase had different amounts of expression for cell cycle genes, corresponding to some other factor (e.g., treatment).
-This would get picked up as a hidden factor of variation, leading to loss of power to detect that other factor.
-In contrast, `cyclone` wouldn't care as long as the relative amounts of expression of cell cycle genes (or more robustly, their ranked expression) within each cell are unchanged.
-Using `scLVM` would also work as it would learn the interesting factors of variation and block on them to avoid them getting regressed out with cell cycle phase.
-However, that kind of model is notoriously finicky due to the large numbers of moving parts.
 
 # Miscellaneous comments
 

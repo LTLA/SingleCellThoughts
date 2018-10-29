@@ -8,3 +8,5 @@ navbar:
       href: general.html
     - text: "Software"
       href: software.html
+    - text: "Workflow"
+      href: workflows.html
