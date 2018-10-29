@@ -5,6 +5,7 @@ date: "`r Sys.Date()`"
 output:
   BiocStyle::html_document:
     toc: true
+    toc_float: true
 bibliography: ref.bib
 ---
 
@@ -70,3 +71,9 @@ While this may be true, it is also difficult to justify theoretically when discr
 This leads to my final point: the t-SNE itself provides a powerful sanity check for the clustering, and vice versa.
 The two algorithms operate on different principles, so agreement of cluster labels with visualized clusters suggests that the underlying structure is not an analysis artifact.
 This reasoning would not be possible if the clustering was performed directly on the t-SNE components, as any issues with the t-SNE would propagate to the clusters.
+
+# Session information
+
+```{r}
+sessionInfo()
+```

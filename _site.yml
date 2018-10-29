@@ -1,0 +1,8 @@
+name: "Single cell thoughts"
+navbar:
+  title: "Aaron's single cell thoughts"
+  left:
+    - text: "Home"
+      href: index.html
+    - text: "General"
+      href: general.html

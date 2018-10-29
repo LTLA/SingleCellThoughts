@@ -1,0 +1,16 @@
+---
+title: "General thoughts"
+---
+
+Brief comments:
+
+- [Linearity](general/linearity.html)
+- [Standardization](general/standardization.html)
+- [Clustering](general/clustering.html)
+- [Cellular detection rate](general/cdr.html)
+- [Bootstrapping](general/bootstrapping.html)
+
+Links to expanded thoughts:
+
+- Effects of log-transformation at https://github.com/LTLA/PseudoCount2018
+- Imputation pitfalls at https://github.com/LTLA/Counterspell2018 
