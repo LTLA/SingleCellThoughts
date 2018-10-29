@@ -8,6 +8,11 @@ output:
     toc_float: true
 ---
 
+```{r, echo=FALSE, results="hide"}
+knitr::opts_chunk$set(warning=FALSE, error=FALSE, message=FALSE)
+library(BiocStyle)
+```
+
 # Why should measurements be linear?
 
 ## Theoretical arguments

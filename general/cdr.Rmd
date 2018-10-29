@@ -8,6 +8,11 @@ output:
     toc_float: true
 ---
 
+```{r, echo=FALSE, results="hide"}
+knitr::opts_chunk$set(warning=FALSE, error=FALSE, message=FALSE)
+library(BiocStyle)
+``` 
+
 # Arguments against
 
 The obvious argument against using the CDR is the fact that it may be confounded with condition or cell type, such that meaningful biology is regressed out.
