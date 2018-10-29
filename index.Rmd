@@ -1,0 +1,10 @@
+---
+title: "Aaron's single-cell thoughts"
+---
+
+A collection of thoughts related to single-cell data analysis, mostly for RNA sequencing.
+These are split into three broad categories:
+
+- **general**: broad thoughts about practices in single-cell data analysis, not specific to my own software.
+- **software**: justifications for some of the programming choices used in my own scRNA-seq data analysis software.
+- **workflow**: justifications for some of the parameter choices and strategies in my scRNA-seq analysis workflows.
