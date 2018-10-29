@@ -1,0 +1,11 @@
+---
+title: "Software thoughts"
+---
+
+Brief comments:
+
+- [Correlations](software/correlations/corsim.html)
+
+Links to expanded thoughts:
+
+- PC selection in https://github.com/LTLA/PCSelection2018
