@@ -1,5 +1,5 @@
 GENERAL_REPORTS = general/bootstrapping.html general/cdr.html general/clustering.html general/linearity.html general/standardization.html
-SOFTWARE_REPORTS = software/correlations/corsim.html software/marker_detection/comments.html
+SOFTWARE_REPORTS = software/correlations/corsim.html software/marker_detection/comments.html software/doublet_detection/bycell.html software/doublet_detection/bycluster.html
 WORKFLOW_REPORTS = workflows/qc.html 
 
 all: index.html $(GENERAL_REPORTS) $(SOFTWARE_REPORTS) $(WORKFLOW_REPORTS)
