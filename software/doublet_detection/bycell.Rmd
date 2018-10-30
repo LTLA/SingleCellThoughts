@@ -1,0 +1,70 @@
+---
+title: Detecting doublet cells with `r Biocpkg("scran")`
+author: Aaron Lun
+date: "`r Sys.Date()`"
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_float: true
+---
+
+# Overview
+
+We use a fairly simple approach that involves creating simulated doublets from the original data set:
+
+1. Perform a PCA on the log-normalized expression for all cells in the dataset.
+Store the rotation vectors.
+2. Randomly select two cells and add their count profile together.
+Compute the log-normalized profile and project it into the PC space.
+3. Repeat **2** to obtain $N_s$ simulated doublet cells.
+4. For each cell, compute the relative local density of simulated doublets to original cells.
+This is used as the doublet score.
+
+# Size factor handling
+
+## Normalization size factors
+
+We allow specification of two sets of size factors for different purposes.
+The first set is the normalization set: division of counts by these size factors yields expression values to be compared across cells.
+This is necessary to compute log-normalized expression values for the PCA.
+
+These size factors are usually computed from some method that assumes most genes are not DE.
+We default to library size normalization though any arbitrary set of size factors can be used.
+The size factor for each doublet is computed as the sum of size factors for the individual cells, based on the additivity of scaling biases.
+
+## RNA content size factors
+
+The second set is the RNA content set: division of counts by these size factors yields expression values that are proportional to absolute abundance across cells.
+This affects the creation of simulated doublets by controlling the scaling of the count profiles for the individual cells.
+These size factors would normally be estimated with spike-ins, but in their absence we default to using unity for all cells.
+
+The use of unity values implies that the library size for each cell is a good proxy for total RNA content.
+This is unlikely to be true: technical biases mean that the library size is an imprecise relative estimate of the content.
+Saturation effects and composition biases also mean that the expected library size for each population is not an accurate estimate of content.
+The imprecision will spread out the simulated doublets while the inaccuracy will result in a systematic shift from the location of true doublets.
+
+Arguably, such problems exist for any doublet estimation method without spike-in information.
+We can only hope that the inaccuracies have only minor effects on the creation of simulated cells.
+Indeed, the first effect does mitigate the second to some extent by ensuring that some simulated doublets will occupy the neighbourhood of the true doublets.
+
+## Interactions between them
+
+These two sets of size factors play different roles so it is possible to specify both of them.
+We use the following algorithm to accommodate non-unity values for the RNA content size factors:
+
+1. The RNA content size factors are used to scale the counts first.
+This ensures that RNA content has the desired effect in step **2** above.
+2. The normalization size factors are also divided by the content size factors.
+This ensures that normalization has the correct effect, see below.
+3. The rest of the algorithm proceeds as if the RNA content size factors were unity.
+Addition of count profiles is done without further scaling, and normalized expression values are computed with the rescaled normalization size factors.
+
+To understand the correctness of the rescaled normalization size factors, consider a non-DE gene with abundance $\lambda_g$.
+The expected count in each cell is $\lambda_g s_i$ for scaling bias $s_i$ (i.e., normalization size factor).
+The rescaled count is $\lambda_g s_i c_i^{-1}$ for some RNA content size factor $c_i$.
+The rescaled normalization size factor is $s_i c_i^{-1}$, such that normalization yields $\lambda_g$ as desired.
+This also holds for doublets where the scaling biases and size factors are additive.
+
+# Density calculations
+
+# Force matching
