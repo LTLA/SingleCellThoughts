@@ -256,7 +256,7 @@ div.tocify {
 </div>
 <div id="practical-arguments-1" class="section level2">
 <h2><span class="header-section-number">2.2</span> Practical arguments</h2>
-<p>Comparison of single-cell averages to bulk equivalents in Hicks et al. (<a href="https://doi.org/10.1093/biostatistics/kxx053" class="uri">https://doi.org/10.1093/biostatistics/kxx053</a>) show discrepancies at low abundances. This corresponds to non-linear behaviour where the single-cell averages systematically drop below their bulk counterparts for a number of genes.</p>
+<p>Comparison of single-cell averages to bulk equivalents in <span class="citation">@hicks2018missing</span> show discrepancies at low abundances. This corresponds to non-linear behaviour where the single-cell averages systematically drop below their bulk counterparts for a number of genes.</p>
 <p>That said, it is unsurprising that you get non-linearities when you increase the amount of input RNA by several orders of magnitude. You wouldn’t perform (as much) pre-amplification of the cDNA in bulk samples (18 cycles for Smart-seq2, &lt;8 for Smart-seq on 1000 cells). This would result in PCR biases where geenes that are more easily amplified get higher coverage. One could argue that such effects would be minor between cells with more similar amounts of RNA and processed with similar numbers of amplification cycles.</p>
 <p>Similar arguments motivate the development of <em>SCnorm</em> (<a href="https://doi.org/10.1038/nmeth.4263" class="uri">https://doi.org/10.1038/nmeth.4263</a>), based on a non-linear fitted trend to the counts against the library size. However, their trend fit does not include zero counts. This will inevitably result in non-linearity at low-abundance genes, as zeroes occur naturally when you scale down the mean.</p>
 </div>
@@ -331,18 +331,18 @@ var(log10(sf.hi))</code></pre>
 ## [8] methods   base     
 ## 
 ## other attached packages:
-##  [1] scRNAseq_1.7.0              scater_1.9.23              
-##  [3] ggplot2_3.0.0               scran_1.9.38               
-##  [5] SingleCellExperiment_1.3.11 SummarizedExperiment_1.11.6
-##  [7] DelayedArray_0.7.48         matrixStats_0.54.0         
+##  [1] scRNAseq_1.7.0              scater_1.9.24              
+##  [3] ggplot2_3.1.0               scran_1.9.39               
+##  [5] SingleCellExperiment_1.3.12 SummarizedExperiment_1.11.6
+##  [7] DelayedArray_0.7.49         matrixStats_0.54.0         
 ##  [9] Biobase_2.41.2              GenomicRanges_1.33.14      
-## [11] GenomeInfoDb_1.17.4         IRanges_2.15.18            
-## [13] S4Vectors_0.19.23           BiocGenerics_0.27.1        
+## [11] GenomeInfoDb_1.17.4         IRanges_2.15.19            
+## [13] S4Vectors_0.19.24           BiocGenerics_0.27.1        
 ## [15] BiocParallel_1.15.15        BiocStyle_2.9.6            
 ## 
 ## loaded via a namespace (and not attached):
 ##  [1] viridis_0.5.1             dynamicTreeCut_1.63-1    
-##  [3] edgeR_3.23.5              viridisLite_0.3.0        
+##  [3] edgeR_3.23.7              viridisLite_0.3.0        
 ##  [5] DelayedMatrixStats_1.3.11 assertthat_0.2.0         
 ##  [7] statmod_1.4.30            BiocManager_1.30.3       
 ##  [9] GenomeInfoDbData_1.2.0    vipor_0.4.5              
@@ -362,7 +362,7 @@ var(log10(sf.hi))</code></pre>
 ## [37] stringr_1.3.1             Rhdf5lib_1.3.3           
 ## [39] munsell_0.5.0             locfit_1.5-9.1           
 ## [41] bindrcpp_0.2.2            compiler_3.5.0           
-## [43] rlang_0.3.0               rhdf5_2.25.11            
+## [43] rlang_0.3.0.1             rhdf5_2.25.11            
 ## [45] grid_3.5.0                RCurl_1.95-4.11          
 ## [47] BiocNeighbors_0.99.22     igraph_1.2.2             
 ## [49] bitops_1.0-6              rmarkdown_1.10           
@@ -372,7 +372,7 @@ var(log10(sf.hi))</code></pre>
 ## [57] bindr_0.1.1               rprojroot_1.3-2          
 ## [59] stringi_1.2.4             ggbeeswarm_0.6.0         
 ## [61] Rcpp_0.12.19              tidyselect_0.2.5         
-## [63] xfun_0.3</code></pre>
+## [63] xfun_0.4</code></pre>
 </div>
 
 
