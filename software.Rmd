@@ -6,6 +6,7 @@ Brief comments:
 
 - [Correlations](software/correlations/corsim.html)
 - [Marker detection](software/marker_detection/comments.html)
+- Doublet detection [by cluster](software/doublet_detection/bycluster.html) or [per cell](software/doublet_detection/bycell.html)
 
 Links to expanded thoughts:
 
