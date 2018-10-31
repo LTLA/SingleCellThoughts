@@ -4,5 +4,5 @@ title: "Workflow thoughts"
 
 Brief comments:
 
-- [Quality control](software/correlations/qc.html)
-- [Cell cycle detection](software/marker_detection/cycling.html)
+- [Quality control](software/correlations/qc.html) (`r BiocStyle::Biocpkg("simpleSingleCell")`)
+- [Cell cycle detection](software/marker_detection/cycling.html) (`r BiocStyle::Biocpkg("simpleSingleCell")`)
