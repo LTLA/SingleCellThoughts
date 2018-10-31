@@ -10,6 +10,7 @@ Brief comments:
 
 Links to expanded thoughts:
 
+- Scaling normalization in https://github.com/MarioniLab/FurtherNorm2018
+- HVG selection in https://github.com/LTLA/HVGDetection2018
 - PC selection in https://github.com/LTLA/PCSelection2018
 - MNN correction in https://github.com/MarioniLab/FurtherMNN2018
-- Scaling normalization in https://github.com/MarioniLab/FurtherNorm2018
