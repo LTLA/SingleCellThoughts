@@ -2,9 +2,49 @@
 title: "Aaron's single-cell thoughts"
 ---
 
-A collection of thoughts related to single-cell data analysis, mostly for RNA sequencing.
-These are split into three broad categories:
+# Overview
 
-- **general**: broad thoughts about practices in single-cell data analysis, not specific to my own software.
-- **software**: justifications for some of the programming choices used in my own scRNA-seq data analysis software.
-- **workflow**: justifications for some of the parameter choices and strategies in my scRNA-seq analysis workflows.
+A collection of thoughts related to single-cell data analysis, mostly for RNA sequencing.
+
+# General
+
+Broad thoughts about practices in single-cell data analysis, not specific to my own software.
+
+**Comments:**
+
+- [Linearity](general/linearity.html)
+- [Standardization](general/standardization.html)
+- [Clustering](general/clustering.html)
+- [Cellular detection rate](general/cdr.html)
+- [Bootstrapping](general/bootstrapping.html)
+
+**Links:**
+
+- Effects of log-transformation at https://github.com/LTLA/PseudoCount2018
+- Imputation pitfalls at https://github.com/LTLA/Counterspell2018
+
+# Software 
+
+Justifications for some of the programming choices used in my own scRNA-seq data analysis software.
+
+**Comments:**
+
+- [Correlations](software/correlations/corsim.html) (`r BiocStyle::Biocpkg("scran")`)
+- [Marker detection](software/marker_detection/comments.html) (`r BiocStyle::Biocpkg("scran")`)
+- Doublet detection [by cluster](software/doublet_detection/bycluster.html) or [per cell](software/doublet_detection/bycell.html) (`r BiocStyle::Biocpkg("scran")`)
+
+**Links:**
+
+- Scaling normalization in https://github.com/MarioniLab/FurtherNorm2018
+- HVG selection in https://github.com/LTLA/HVGDetection2018
+- PC selection in https://github.com/LTLA/PCSelection2018
+- MNN correction in https://github.com/MarioniLab/FurtherMNN2018
+
+# Workflow
+
+Justifications for some of the parameter choices and strategies in my scRNA-seq analysis workflows.
+
+**Comments:**
+
+- [Quality control](software/correlations/qc.html) (`r BiocStyle::Biocpkg("simpleSingleCell")`)
+- [Cell cycle detection](software/marker_detection/cycling.html) (`r BiocStyle::Biocpkg("simpleSingleCell")`)
