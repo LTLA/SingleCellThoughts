@@ -1,0 +1,67 @@
+---
+title: Comments on the differential expression steps
+author: Aaron Lun
+date: "`r Sys.Date()`"
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r, echo=FALSE, results="hide"}
+knitr::opts_chunk$set(error=FALSE, message=FALSE, warning=FALSE)
+```
+
+# Arguments against non-parametric tests
+
+The main complaint is that scaling normalization does not adjust for differences in the distributions.
+This results in incorrect rejection of the null hypothesis in fairly innocuous cases:
+
+```{r}
+set.seed(100)
+p <- numeric(1000)
+for (i in seq_along(p)) { 
+    p[i] <- wilcox.test(rpois(100, lambda=1)*10,
+            rpois(100, lambda=10))$p.value
+}
+hist(p, col="grey80")
+```
+
+Similar criticisms can be made of the `r Biocpkg("scDD")` approach, which has the additional difficulty of interpreting the type of change in distribution.
+
+# Interpreting `r Biocpkg("edgeR")` weights
+
+In the proposed summation approach, the weights can be interpreted as the number of cells if the "counts" are the average of the counts.
+This interpretation is correct, as one can see from the correct distribution of GLM deviances and LRT $p$-values:
+
+```{r}
+set.seed(987654)
+y <- matrix(rnbinom(10000*6,mu=10*1:6,size=10*1:6), ncol=6, byrow=TRUE)
+y <- sweep(y, 2, 1:6, "/") # assuming that the average was taken.
+design <- cbind(1,c(0,0,0,1,1,1))
+
+library(edgeR)
+fit <- glmFit(y,design,offset=0,dispersion=0.1,weights=1:6)
+gof(fit, plot=TRUE)
+
+res <- glmLRT(fit, coef=2)
+hist(res$table$PValue, col="grey80")
+```
+
+For use in summation, we implicitly assume that the counts for the cells are i.i.d. NB.
+This is not true due to the fact that the true mean differs between cells due to scaling bias, resulting in variance differences that are not fully adjusted by scaling normalization.
+Nonetheless, weighting by the number of cells is a cheap way of considering the precision of pseudo-bulk counts computed from different numbers of cells.
+Greater accuracy would require us to estimate dispersions for the per-cell counts, which would be computationally expensive.
+
+Violations of the above assumption will result in differences in the mean-variance relationship between observations for the same gene.
+This is driven by differences in the precision of each pseudo-bulk count (conditional on the sample) and reduces the accuracy of the model. 
+We hope that the sample-to-sample variability is much larger than any differences in the pseudo-bulk count precision for each sample, thus rendering the latter effect negligible.
+This should be the case for summed pseudo-counts computed from large numbers of cells in each sample.
+
+# Session information
+
+```{r}
+sessionInfo()
+```
+
+
