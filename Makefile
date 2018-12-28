@@ -1,7 +1,7 @@
 REPORTS = ./index.html \
     general/bootstrapping.html general/cdr.html general/clustering.html general/linearity.html general/standardization.html \
     software/correlations/corsim.html software/marker_detection/comments.html software/doublet_detection/bycell.html software/doublet_detection/bycluster.html \
-    workflows/qc.html 
+    workflows/cycling.html workflows/de.html workflows/qc.html 
 
 all: $(REPORTS)
 
