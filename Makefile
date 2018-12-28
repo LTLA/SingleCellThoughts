@@ -1,23 +1,12 @@
-GENERAL_REPORTS = general/bootstrapping.html general/cdr.html general/clustering.html general/linearity.html general/standardization.html
-SOFTWARE_REPORTS = software/correlations/corsim.html software/marker_detection/comments.html software/doublet_detection/bycell.html software/doublet_detection/bycluster.html
-WORKFLOW_REPORTS = workflows/qc.html 
+REPORTS = ./index.html \
+    general/bootstrapping.html general/cdr.html general/clustering.html general/linearity.html general/standardization.html \
+    software/correlations/corsim.html software/marker_detection/comments.html software/doublet_detection/bycell.html software/doublet_detection/bycluster.html \
+    workflows/qc.html 
 
-all: index.html $(GENERAL_REPORTS) $(SOFTWARE_REPORTS) $(WORKFLOW_REPORTS)
+all: $(REPORTS)
 
-index.html: index.Rmd general.Rmd software.Rmd workflows.Rmd
-	echo "rmarkdown::render_site()" | R --no-save --slave
-	mv _site/*.html .
-	mv _site/site_libs .
-
-$(GENERAL_REPORTS): %.html: %.Rmd
-	cd general && echo 'rmarkdown::render(basename("$<"))' | R --no-save --slave
-
-$(SOFTWARE_REPORTS): %.html: %.Rmd
-	cd `dirname $<` && echo 'rmarkdown::render(basename("$<"))' | R --no-save --slave
-
-$(WORKFLOW_REPORTS): %.html: %.Rmd
-	cd workflows && echo 'rmarkdown::render(basename("$<"))' | R --no-save ----slave
+$(REPORTS): %.html: %.Rmd
+	cd $(shell dirname $<) && R --no-save --slave -e 'rmarkdown::render(basename("$<"))'
 
 clean:
-	rm -f *.html $(GENERAL_REPORTS) $(SOFTWARE_REPORTS) $(WORKFLOW_REPORTS)
-	rm -rf site_libs/
+	rm -f $(REPORTS)
