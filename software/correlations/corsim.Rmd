@@ -14,13 +14,15 @@ knitr::opts_chunk$set(error=FALSE, warning=FALSE, message=FALSE)
 
 # Motivation
 
-The idea with detecting correlated gene pairs is to mitigate dependence on explicit subpopulation identification for follow-up studies.
-We identify strongly correlated genes first, then only need to check for subpopulations as a diagnostic.
-This reduces the sensitivity of the analysis to ambiguity/uncertainty during subpopulation identification.
-It's possible because validation requires genes, not subpopulations (as the current cells are destroyed), so we skip the middleman.
-We also don't have to account for HVG identification in multiple testing here, because correlations are independent of the variance of the genes.
+The idea with detecting correlated gene pairs is to provide an additional level of verification for follow-up studies.
+It does not depend on explicit subpopulation/trajectory identification and thus avoids problems with their assumptions.
+Direct calculation of correlations is closer to the data and allows sanity checking of the inferred structure.
+A related motivation is that validation involves genes rather than subpopulations (as the current cells are destroyed).
+Thus, by obtaining reliable statistics for correlated gene pairs, we can mirror the results that might be expected from two-marker FACS or FISH.
 
 # Why use a modified rho?
+
+## Computational speed 
 
 As discussed in `?correlatePairs`, we use a modified rho calculation where tied values are randomly assigned ranks, i.e., tie breaking.
 The modification simplifies things by allowing the same tie-free null distribution to be used for all genes.
@@ -43,24 +45,43 @@ sum(unlist(all.p) <= 0.01)/10000
 sum(unlist(all.p) <= 0.05)/10000
 ```
 
+## More relevant results
+
 An additional benefit is that tie breaking avoids spuriously large correlations when ties are averaged.
 The example below provides a worst-case scenario where two genes are perfectly correlated despite only being expressed in one cell.
 The standard calculation with averaged tie ranks would yield a perfect correlation in spite of the weakness of the correlation.
 (A permutation-based p-value won't provide any protection here; the expected p-value would always be 0.01.)
-Tie breaking ensures that the correlation is not purely driven by the few cells that happen to express both genes,
-    thus favouring genes with correlations driven by expression across many cells in the data set.
 
 ```{r}
-g1 <- rep(0:1, c(99, 1))
-g2 <- g1
-cor(g1, g2, method="spearman")
-
-# With multiple rounds of tie breaking:
-set.seed(1000)
-correlatePairs(rbind(g1, g2), null.iter=1e4)
+r1 <- rep(0:1, c(99, 1))
+r2 <- r1
+cor(r1, r2, method="spearman")
 ```
 
-Of course, if there are many ties, the final correlation and p-value may be heavily dependent on the manner of tie breaking.
+Tie breaking ensures that the correlation is not purely driven by the few cells that happen to express both genes.
+This favours genes with correlations driven by expression across many cells in the data set.
+
+```{r}
+set.seed(1000)
+correlatePairs(rbind(r1, r2), null.iter=1e4)
+```
+
+One _could_ argue that a large correlation is desirable in the above example, e.g., to favour gene pairs that are co-expressed in rare subpopulations.
+I would say that the existence of a rare population requires stronger evidence.
+Indeed, with a greater number of cells involved, even `correlatePairs()` will admit to a non-zero correlation (see the p-value).
+
+```{r}
+x1 <- rep(0:1, c(990, 10))
+x2 <- x1
+cor(x1, x2)
+
+set.seed(1000)
+correlatePairs(rbind(x1, x2), null.iter=1e4)
+```
+
+## Disadvantages with stability 
+
+Of course, if there are many ties, the final correlation and p-value may be heavily dependent on the random manner of tie breaking.
 To mitigate instability, we repeat the calculations with new randomly broken ties, and aggregate the statistics across multiple such iterations.
 The correlations are averaged and the p-values are combined using Simes' method.
 (The per-iteration p-values are uniformly distributed under the null but are positively correlated across iterations depending on the number of ties.
