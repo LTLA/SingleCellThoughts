@@ -12,12 +12,20 @@ output:
 knitr::opts_chunk$set(error=FALSE, warning=FALSE, message=FALSE)
 ```
 
+# Motivation
+
+The idea with detecting correlated gene pairs is to mitigate dependence on explicit subpopulation identification for follow-up studies.
+We identify strongly correlated genes first, then only need to check for subpopulations as a diagnostic.
+This reduces the sensitivity of the analysis to ambiguity/uncertainty during subpopulation identification.
+It's possible because validation requires genes, not subpopulations (as the current cells are destroyed), so we skip the middleman.
+We also don't have to account for HVG identification in multiple testing here, because correlations are independent of the variance of the genes.
+
 # Why use a modified rho?
 
+As discussed in `?correlatePairs`, we use a modified rho calculation where tied values are randomly assigned ranks, i.e., tie breaking.
 The modification simplifies things by allowing the same tie-free null distribution to be used for all genes.
-It also means that we can get spuriously large correlations (which we would have been protected from, had we considered ties).
-However, this is acceptable as we can let the error-control machinery deal with the possibility of such spuriously large values.
-We also don't have to account for HVG identification in multiple testing here, because correlations are independent of the variance of the genes.
+This means that we do not have to generate new permutations for every gene pair, which would be very time-consuming.
+As shown below, type I error control is maintained under the null with randomly broken ties.
 
 ```{r}
 library(scran)
@@ -35,30 +43,58 @@ sum(unlist(all.p) <= 0.01)/10000
 sum(unlist(all.p) <= 0.05)/10000
 ```
 
-The idea is to mitigate dependence on explicit subpopulation identification for follow-up studies.
-We identify strongly correlated genes first, then only need to check for subpopulations as a diagnostic.
-This reduces the sensitivity of the analysis to ambiguity/uncertainty during subpopulation identification.
-It's possible because validation requires genes, not subpopulations (as the current cells are destroyed), so we skip the middleman.
+An additional benefit is that tie breaking avoids spuriously large correlations when ties are averaged.
+The example below provides a worst-case scenario where two genes are perfectly correlated despite only being expressed in one cell.
+The standard calculation with averaged tie ranks would yield a perfect correlation in spite of the weakness of the correlation.
+(A permutation-based p-value won't provide any protection here; the expected p-value would always be 0.01.)
+Tie breaking ensures that the correlation is not purely driven by the few cells that happen to express both genes,
+    thus favouring genes with correlations driven by expression across many cells in the data set.
+
+```{r}
+g1 <- rep(0:1, c(99, 1))
+g2 <- g1
+cor(g1, g2, method="spearman")
+
+# With multiple rounds of tie breaking:
+set.seed(1000)
+correlatePairs(rbind(g1, g2), null.iter=1e4)
+```
+
+Of course, if there are many ties, the final correlation and p-value may be heavily dependent on the manner of tie breaking.
+To mitigate instability, we repeat the calculations with new randomly broken ties, and aggregate the statistics across multiple such iterations.
+The correlations are averaged and the p-values are combined using Simes' method.
+(The per-iteration p-values are uniformly distributed under the null but are positively correlated across iterations depending on the number of ties.
+Simes' method is used as it is robust to these correlations.) 
+By reporting these statistics, we reduce the run-to-run variation in the results.
+
+Another downside is that we can get large correlations by chance, depending on how the ties are broken.
+However, this is acceptable as we can let the multiple testing machinery deal with the possibility of such spuriously large values.
+
+# Constructing a null distribution with `design=`
 
 We can also check what happens with a design matrix.
-Naively comparing against a null distribution of correlations that was constructed without considering the design will result in loss of control.
-Rather, the null distribution should be compared to an appropriate null, as shown below.
+Naively comparing against a null distribution of correlations that was constructed without considering `design` will result in loss of control.
+Rather, the null distribution should be compared to an appropriate null that accounts for the loss of residual d.f., as shown below.
 
 ```{r}
 set.seed(12120)
 design <- model.matrix(~factor(rep(1:5, 2)))
 y <- matrix(rnorm(1000, mean=rep(1:5, 5), sd=2), ncol=10, byrow=TRUE)
+
 null <- correlateNull(ncol(y))
-out <- correlatePairs(y, design=design, null=null, lower.bound=-Inf)
-plot(log10(sort(out$p.value)/1:nrow(out)*nrow(out))) # wrong
+out <- correlatePairs(y, design=design, null.dist=null, lower.bound=-Inf)
+plot(log10(sort(out$p.value)/1:nrow(out)*nrow(out)),
+    ylab="Log(Expected/Observed)") # wrong
+
 null <- correlateNull(design=design)
-out <- correlatePairs(y, design=design, null=null, lower.bound=-Inf)
-plot(log10(sort(out$p.value)/1:nrow(out)*nrow(out))) # right
+out <- correlatePairs(y, design=design, null.dist=null, lower.bound=-Inf)
+plot(log10(sort(out$p.value)/1:nrow(out)*nrow(out)),
+    ylab="Log(Expected/Observed)") # right
 ```
 
-Note that counts of zero will have the same normalized log-expression, even if the library sizes are different.
-For non-zero counts, correlations may be driven by library size differences between cells.
-This is, perhaps, less problematic, as a gene with the same count in a small and large cell is presumably downregulated in the latter.
+Note that the construction of the null distribution assumes that the residual error is normally distributed _and_ that `design` is correctly specified.
+Normality is almost certainly not going to hold in real scRNA-seq data, so any use of `design=` should be treated with caution.
+It is for this reason that we prefer `block=`, as discussed in `?correlatePairs`.
 
 # Statistical issues to be solved
 
@@ -74,11 +110,13 @@ means <- rep(c(5, 50), each=50)
 disp <- rep(c(1, 0.1), each=50)
 counts <- matrix(rnbinom(50000, mu=means, size=1/disp), byrow=TRUE, ncol=length(means))
 counts <- t(t(counts)/means)
+
 actual.cor <- cor(t(counts), method="spearman") 
 pretend.cor <- correlateNull(100, iters=10000)
 var(as.vector(actual.cor))
 var(pretend.cor)
-testing <- correlatePairs(counts, pretend.cor)
+
+testing <- correlatePairs(counts, pretend.cor, tie.iters=1) # tie.iters=1 for simplicity.
 hist(testing$p.value) # fairly substantial loss of type I error control
 ```
 
@@ -156,11 +194,12 @@ While the _p_-values are unlikely to be accurate here, the normality assumption 
 ```{r}
 set.seed(1020)
 nulls <- correlateNull(design=X, iters=1e4)
-correlatePairs(rbind(g1, g2), design=X, null=nulls, lower.bound=NA) # Bad
-correlatePairs(rbind(g1, g2), design=X, null=nulls, lower.bound=0) # Good
+correlatePairs(rbind(g1, g2), design=X, null.dist=nulls, lower.bound=NA) # Bad
+correlatePairs(rbind(g1, g2), design=X, null.dist=nulls, lower.bound=0) # Good
+
 nulls <- correlateNull(design=Y, iters=1e4)
-correlatePairs(rbind(g3, g4), design=Y, null=nulls, lower.bound=NA) # Bad
-correlatePairs(rbind(g3, g4), design=Y, null=nulls, lower.bound=0) # Good
+correlatePairs(rbind(g3, g4), design=Y, null.dist=nulls, lower.bound=NA) # Bad
+correlatePairs(rbind(g3, g4), design=Y, null.dist=nulls, lower.bound=0) # Good
 ```
 
 # Session information 
