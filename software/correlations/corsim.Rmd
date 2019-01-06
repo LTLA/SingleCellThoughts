@@ -22,10 +22,22 @@ Thus, by obtaining reliable statistics for correlated gene pairs, we can mirror 
 
 # Why use a modified rho?
 
+## Overview
+
+The default tie-handling behaviour in `correlatePairs` is to use `ties.method="expected"`.
+This computes the expected rho by averaging across all possible permutations of randomly broken tied values.
+Specifically, given set of tied values, one can imagine randomly assigning unique ranks to each value.
+By comparison, the standard rho calculation (with `ties.method="average"`) would assign the average rank to all tied values.
+
+Calculation of the expected rho is actually rather simple.
+Like `ties.method="average"`, it involves just replacing the tied observations with the average rank when computing the covariance between genes.
+The expected rank for a tied observation is simply the average, which can be used in the product as tie breaking is done independently between genes.
+The difference from the standard rho calculation is that the sum of squared differences (in the denominator of the correlation expression) is still computed with unique ranks, 
+representing the denominator for any given tie breaking permutation.
+
 ## Computational speed 
 
-As discussed in `?correlatePairs`, we use a modified rho calculation where tied values are randomly assigned ranks, i.e., tie breaking.
-The modification simplifies things by allowing the same tie-free null distribution to be used for all genes.
+The use of tie-breaking simplifies things by allowing the same tie-free null distribution to be used for all genes.
 This means that we do not have to generate new permutations for every gene pair, which would be very time-consuming.
 As shown below, type I error control is maintained under the null with randomly broken ties.
 
@@ -45,12 +57,21 @@ sum(unlist(all.p) <= 0.01)/10000
 sum(unlist(all.p) <= 0.05)/10000
 ```
 
-## More relevant results
+In practice, the expected rho does not follow the distribution returned by `correlateNull`.
+This is because the expected rho is an average across tie-breaking permutations while the null distribution refers to the rho for each individual permutation.
+We can expect the expected rho to be less variable and thus the $p$-values will probably be somewhat conservative.
 
-An additional benefit is that tie breaking avoids spuriously large correlations when ties are averaged.
+The opposite applies for the standard rho computed by `ties.method="average"`.
+This yields larger absolute rho in the presence of ties, resulting in anticonservative p-values when compared to `correlateNull`.
+A more accurate p-value would require permutations for each gene pair to account for the pair-specific pattern of ties.
+This would be unacceptably slow (and have exchangeability problems anyway, see below) so I'm not doing this..
+
+## Avoid tie-based inflation
+
+Computing the expected rho from random tie breaking avoids spuriously large correlations with the standard rho.
 The example below provides a worst-case scenario where two genes are perfectly correlated despite only being expressed in one cell.
 The standard calculation with averaged tie ranks would yield a perfect correlation in spite of the weakness of the correlation.
-(A permutation-based p-value won't provide any protection here; the expected p-value would always be 0.01.)
+(A permutation-based p-value won't provide any protection here; the expected p-value would always be 1 over the number of cells.)
 
 ```{r}
 r1 <- rep(0:1, c(99, 1))
@@ -63,33 +84,11 @@ This favours genes with correlations driven by expression across many cells in t
 
 ```{r}
 set.seed(1000)
-correlatePairs(rbind(r1, r2), null.iter=1e4)
+correlatePairs(rbind(r1, r2))
 ```
 
 One _could_ argue that a large correlation is desirable in the above example, e.g., to favour gene pairs that are co-expressed in rare subpopulations.
-I would say that the existence of a rare population requires stronger evidence.
-Indeed, with a greater number of cells involved, even `correlatePairs()` will admit to a non-zero correlation (see the p-value).
-
-```{r}
-x1 <- rep(0:1, c(990, 10))
-x2 <- x1
-cor(x1, x2)
-
-set.seed(1000)
-correlatePairs(rbind(x1, x2), null.iter=1e4)
-```
-
-## Disadvantages with stability 
-
-Of course, if there are many ties, the final correlation and p-value may be heavily dependent on the random manner of tie breaking.
-To mitigate instability, we repeat the calculations with new randomly broken ties, and aggregate the statistics across multiple such iterations.
-The correlations are averaged and the p-values are combined using Simes' method.
-(The per-iteration p-values are uniformly distributed under the null but are positively correlated across iterations depending on the number of ties.
-Simes' method is used as it is robust to these correlations.) 
-By reporting these statistics, we reduce the run-to-run variation in the results.
-
-Another downside is that we can get large correlations by chance, depending on how the ties are broken.
-However, this is acceptable as we can let the multiple testing machinery deal with the possibility of such spuriously large values.
+However, a low correlation for a small subpopulation makes more sense to me.
 
 # Constructing a null distribution with `design=`
 
@@ -137,7 +136,7 @@ pretend.cor <- correlateNull(100, iters=10000)
 var(as.vector(actual.cor))
 var(pretend.cor)
 
-testing <- correlatePairs(counts, pretend.cor, tie.iters=1) # tie.iters=1 for simplicity.
+testing <- correlatePairs(counts, pretend.cor) 
 hist(testing$p.value) # fairly substantial loss of type I error control
 ```
 
