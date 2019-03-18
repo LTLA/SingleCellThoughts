@@ -20,10 +20,9 @@ Standardization involves scaling all features so that they have the same (unit) 
 This is commonly recommended for features that are not directly comparable (e.g., annual income, lifespan, education level) prior to computing an objective function.
 It ensures that the objective function is not solely determined by the feature with the largest variance, as this has no meaning when the variances are not comparable.
 In scRNA-seq contexts, standardization ensures that all genes contribute the same amount of variance to downstream steps like PCA and clustering.
+However, this has a number of drawbacks that are not often considered by analysts.
 
-# Drawbacks of standardization
-
-## Inappropriate gene weighting
+# Inappropriate gene weighting
 
 Standardizing will downweight the contribution of interesting genes with large total variances due to biological heterogeneity. 
 This will reduce the resolution of biological differences between cell populations.
@@ -45,119 +44,52 @@ plot(out.raw$x[,1], out.raw$x[,2], col=col, main="Raw")
 plot(out.sca$x[,1], out.sca$x[,2], col=col, main="Scaled")
 ```
 
-The effects of standardization are also unpredictable, as distances between subpopulations become dependent on other structures in the data.
+Distances between subpopulations also become unnecessarily inter-dependent in standardized data.
 To illustrate, imagine a dataset containing two subpopulations.
-One of them highly expresses gene X, while the other only has moderate expression - thus, we are able to distinguish these two populations on the expression of gene X.
-Now, imagine adding a third subpopulation that is silent for gene X.
-If standardization is performed, this will reduce the power of X to discriminate between the first two subpopulations.
+One of them highly expresses gene $X$, while the other only has moderate expression - thus, we are able to distinguish these two populations on the expression of gene $X$.
+Now, imagine adding a third subpopulation that is silent for gene $X$.
+If standardization is performed, this will reduce the power of $X$ to discriminate between the first two subpopulations.
 This is counterintuitive as nothing has changed between the first two subpopulations.
 
-## Distortion of log-fold changes
+# Distortion of log-fold changes
 
 Any scaling distorts the true log-fold changes for genes between subpopulations.
 This affects interpretation of relative distances between three or more groups of cells.
 In particular, it becomes difficult to determine whether two groups are more related to each other than to a third group.
 
-One could argue that log-fold changes of different genes are not comparable.
+One could argue that log-fold changes of different genes are not comparable anyway.
 A 2-fold change in a cell type-defining marker gene may be more important than a 10-fold change in another gene involved in cell cycle or something.
 Even so, it is hard to see how standardization does any better in this regard than using the unbiased estimates of the log-fold changes, 
 as neither incorporate _a priori_ knowledge about the importance of the genes.
 
-Under some limited conditions, standardization means that the magnitude of the separation between populations is driven by the number of DEGs, not their log-fold changes.
+Under certain conditions, standardization means that the magnitude of the separation between populations is driven by the number of DEGs, not their log-fold changes.
 Again, this is not clearly better (or worse) than computing distances based on the magnitude of the log-fold changes.
 
-# Exploiting the technical component
+# Alternative scaling approaches
 
-The main aim of standardization is to eliminate uninteresting differences in variance between genes.
-Unfortunately, we can't say whether the biological component is interesting or not from its magnitude alone.
-If we only wanted the structured heterogeneity, we'd only be able to make some kind of distinction after clustering.
-(In which case, scaling based on the clusters and then re-clustering would probably pose some problems with circularity.)
+The use for standardization would require us to assume that biological differences in variance between genes are not interesting.
+A slightly more appropriate approach is to remove differences in the technical component of variation.
+This aim would be to avoid domination of the results by genes with large technical components due to the nature of the mean-variance trend.
+The problem with this strategy is that genes with very low technical components (e.g., high-abundance genes) would be strongly scaled up.
+This would inflate their biological components, allowing them to dominate and effectively inverting the original problem.
 
-The only aspect that we can confidently say is uninteresting is the technical component, e.g., due to sequencing/capture/amplification noise in the protocol.
-This can be used to provide a more relevant theoretical justification for standardization in scRNA-seq applications.
-Most genes will have low-to-zero biological components, which suggests that standardization will equalize most of the technical components across the dataset.
-This means that we can avoid domination of the results by genes with large technical components due to the nature of the mean-variance trend.
-
-Of course, this does not overcome the aforementioned issues with shrinkage of the biological components.
-One question is whether the decrease in the total technical component due to standardization is faster than the decrease in the total biological component.
-This is generally unlikely as any non-zero biological component will increase the total variance, leading to faster down-scaling for the corresponding gene.
-Any positive outcome would require some interaction with the strong mean-variance trend in log-count data.
-For example, if the noisiest genes in the mid-abundance range do not contain any biological structure, downscaling their variance would be beneficial.
-
-Another question relates to how standardization affects the relative contribution of genes of different abundance.
-Genes that have larger technical components will be downscaled more severely, even if they have the same biological component as other genes.
-This effectively downweights the highly variable mid-abundance genes that have fairly large technical components,
-contradicting the argument that standardization helps to cancel out the mean-variance relationship.
-
-# Alternative strategies
-
-## Scaling to preserve the biological component
-
-A more refined option is to scale each gene such that its variance becomes equal to the biological component.
-This accounts for the mean-variance trend and upweights genes with large biological components (rather than penalizing them).
+Another option is to scale each gene such that its variance becomes equal to the biological component.
+This accounts for the mean-variance trend and upweights genes with large biological components rather than penalizing them.
 Conversely, genes with near-zero biological components are effectively ignored during the PCA.
 However, this is still an _ad hoc_ strategy.
 For total variance $V$ decomposed into $B + T$, the rescaled biological component becomes $B^2/V$ while the rescaled technical component is $TB/V$;
 neither of these values has much meaning to me, and treating them as $B$ and $T$ would clearly be wrong unless $T = 0$.
 
-## Variance stabilizing transformation
+# Concluding remarks
 
-It was proposed to me that we should use the `vst` function from `r Biocpkg("DESeq2")` to perform the transformation.
-However, this does not avoid any of the issues described above with inappropriate scaling of the biological component.
-Consider the following example, where two genes separate two groups of cells:
+Standardization effectively weights each gene in inverse proportion to its variance.
+In this respect, standardization can be viewed as another feature selection step.
+However, I would argue that the effects of standardization are largely undesirable in scRNA-seq contexts where we expect to see large differences in variance between genes due to biology.
+It is true that large differences in the technical components are also present, but it is not clear how to remove them without distorting the biological differences.
 
-```{r}
-set.seed(1000)
-ngenes <- 1000
-means <- 2^sort(runif(ngenes, 5, 10))
-dispersion <- 10/means + 0.1
-
-ncells <- 200
-counts <- matrix(rnbinom(ngenes*ncells, mu=means, size=1/dispersion), 
-    ncol=ncells)
-
-# Adding DE.
-half <- seq_len(100)
-counts[1,half] <- rnbinom(ncells/2, mu=means[1]*2, size=1/dispersion[1])
-counts[ngenes,half] <- rnbinom(ncells/2, mu=means[ngenes]*2, 
-    size=1/dispersion[ngenes])
-```
-
-Using `vst` and a simple log-transformation in this simulation indicates that only the latter preserves the size of the log-fold change.
-
-```{r}
-library(DESeq2)
-outV <- vst(counts)
-mean(outV[1,half]) - mean(outV[1,-half]) # not 1.
-mean(outV[ngenes,half]) - mean(outV[ngenes,-half]) # close to 1.
-
-outL <- log2(counts + 1)    
-mean(outL[1,half]) - mean(outL[1,-half]) # close to 1.
-mean(outL[ngenes,half]) - mean(outL[ngenes,-half]) # close to 1.
-```
-
-The counts are pretty large here, so the value of the pseudo-count should not be an issue, nor should there be any shrinkage to compensate for Poisson noise.
-Rather, this is due to the fact that `vst` automatically squeezes values together more strongly when the count data are noisy, in order to stabilize the variance.
-Less squeezing occurs at higher counts, resulting in a distortion of the log-fold changes (equivalent to that of the biological component).
-
-# Comments on using the raw counts
-
-Standardization seems to be necessary when performing PCA or clustering on the counts rather than log-counts.
-Otherwise, the results will be driven primarily by high-abundance genes with the greatest unscaled variance.
-Putting aside the problems mentioned above, the use of standardized counts has a number of additional problems.
-This is because standardization does not change the mean-variance relationship _within_ a gene.
-I have listed a few inter-related issues below:
-
-- Limited dynamic range.
-Variation in the data are dominated by absolute differences in large counts.
-For example, in a mixture of three populations with mean counts of 1, 10 and 100, the first two are effectively indistinguishable.
-- Misrepresentation of variability for large counts.
-In the above example, we would conclude that the last population is the most variable on the count scale, e.g., assuming a Poisson distribution.
-However, by any other metric (e.g., CV^2^), the last population should be the least variable, especially as sequencing noise ceases to be a factor.
-- Absolute differences in counts are uninterpretable.
-Computing distances between (standardized) counts is not informative, as the interpretation of the difference depends on the size of the counts.
-This information cannot be easily incorporated through a single scaling factor in a mixture distribution with different true abundances.
-A difference of 1 vs 10 should not have the same weight as a difference of 91 vs 100.
+I believe that _not_ performing standardization is the best approach in routine applications.
+This allows genes with large biological components to drive systematic separation in downstream analyses.
+While genes with large technical components will also drive separation, this should be stochastic and removable by denoising.
 
 # Session information
 
