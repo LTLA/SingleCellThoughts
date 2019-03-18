@@ -13,6 +13,7 @@ Broad thoughts about practices in single-cell data analysis, not specific to my 
 **Comments:**
 
 - [Linearity](general/linearity.html)
+- [Transformation](general/transformation.html)
 - [Standardization](general/standardization.html)
 - [Clustering](general/clustering.html)
 - [Cellular detection rate](general/cdr.html)
@@ -21,7 +22,7 @@ Broad thoughts about practices in single-cell data analysis, not specific to my 
 **Links:**
 
 - Effects of log-transformation at https://github.com/LTLA/PseudoCount2018
-- Imputation pitfalls at https://github.com/LTLA/Counterspell2018
+- Other imputation pitfalls at https://github.com/LTLA/Counterspell2018
 
 # Software 
 
