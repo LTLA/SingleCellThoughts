@@ -18,26 +18,44 @@ set.seed(120000)
 # Rationale
 
 Transformation of expression data aims to achieve variance stabilization, i.e., an identical noise distribution for all observations.
-This ensures that the variance in the data set is not solely dominated by high-abundance genes with high variance.
-It also simplifies downstream analyses by circumventing the need for complex models.
+This simplifies downstream analyses by circumventing the need for complex models to account for the mean-variance relationship.
 For example, one could apply linear models directly under the assumption of i.i.d. normal errors. 
 
-# Why we don't use counts
+In the context of scRNA-seq data analysis, the motivation for transformation is more nebulous.
+Most common procedures are not model-based and do not assume i.i.d. errors in the first place.
+Nonetheless, there are some benefits to using transformed data, which allows us:
 
-**Limited dynamic range.**
-Variation in the data are dominated by absolute differences in large counts.
-For example, in a mixture of three populations with mean counts of 1, 10 and 100, the first two are effectively indistinguishable.
+- To avoid high-abundance genes from driving population heterogeneity, simply because they have higher variance.
+  Transformation aims to equalize the contribution of all genes to high-dimensional procedures like clustering.
+- To ensure that the population variance is independent of the coverage of that population.
+  For example, a population with deeper sequencing/coverage would have larger counts and greater variance without transformation,
+  which may be misleading for comparisons of heterogeneity (e.g., to study differentiation priming).
+- To improve the dynamic range of expression values and thus resolution of differences.
+  For example, in a mixture of three populations with mean counts of 1, 10 and 100, 
+  the first two are effectively indistinguishable without transformation.
+- To simplify interpretation of downstream statistics.
+  In particular, distances in log-transformed data can be treated as an estimate of the log-fold change in the (normalized) counts.
 
-**Misrepresentation of variability for large counts.**
-In the above example, we would conclude that the last population is the most variable on the count scale, e.g., assuming a Poisson distribution.
-However, by any other metric (e.g., CV^2^), the last population should be the least variable, especially as sequencing noise ceases to be a factor.
+# Philosophical issues
 
-**Absolute differences in counts are uninterpretable.**
-Computing distances between (standardized) counts is not informative, as the interpretation of the difference depends on the size of the counts.
-This information cannot be easily incorporated through a single scaling factor in a mixture distribution with different true abundances.
-A difference of 1 vs 10 should not have the same weight as a difference of 91 vs 100.
+Let's assume that it is possible to equalize the contribution of each gene to population heterogeneity.
+There is no reason that this would offer any benefit to the downstream analysis. 
+For example, if relevant expression differences occurred in high-abundance genes, 
+it would be better to avoid transformation prior to procedures such as clustering.
+Of course, this is unlikely to be the case but it is equally unlikely to assume that relevant genes will be evenly distributed across the abundance range.
 
-# Known challenges with transformation
+Attempting to equalize the contribution of each gene may also be misguided in a biological context.
+For example, in log-transformed data, highly expressed genes will often have very low variances.
+This mean-variance relationship can be considered to be biologically relevant as such genes need to be stably expressed.
+Removing it with variance stabilization may do more harm than good in downstream analyses.
+
+The optimal transformation would be the one that gave greatest weight to the abundance interval containing the most relevant genes.
+Of course, the relevance of a gene is either unknown or in the eye of the beholder;
+however, generally speaking, this refers to genes that have only moderate-to-low average expression across the data set.
+This is because they are likely to be upregulated in some cells and downregulated in others,
+and thus be associated with biological heterogeneity within the population.
+
+# Practical challenges
 
 ## With low counts
 
