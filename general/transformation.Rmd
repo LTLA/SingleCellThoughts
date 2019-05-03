@@ -156,8 +156,9 @@ Users can then operate on the residuals in downstream exploratory analyses like 
 One problem is that the function does not actually achieve variance stabilization, even in a simple case.
 There are several major issues in the example below -
  the irregular behaviour at low abundances,
- the loss of all variation at higher abundances,
- and 
+ the lack of any increase in the variance for the subset of "highly variable genes",
+ and the complete loss of all variation at high abundances.
+
 
 ```{r, fig.wide=TRUE}
 library(sctransform)
@@ -186,8 +187,7 @@ The use of the log-total count as a covariate in the GLM fit is also concerning.
 Any biology correlated with the total count (e.g., involving differences in total RNA content) may be regressed out.
 Below is an example of this effect using pre-processed `r Biocpkg("simpleSingleCell", "tenx.html", "PBMC data")`,
 where `sctransform`ed data results in loss of marker expression in over half of the platelet population.
-(There is also some gain of expression in non-expressing cells, which is unusual for a transformation method.)
-Of course, platelets are a rather extreme example, but one can imagine more subtle cases where biology is lost.
+(There is also some gain of expression in non-expressing cells, which is not expected for a transformation method.)
 
 ```{r, fig.wide=TRUE, eval=file.exists("pbmc_data.rds")}
 # To construct pbmc_data.rds:
@@ -214,6 +214,33 @@ for (gene in c("PF4", "SDPR", "PPBP")) {
         ylab="scTransformed", main=gene, pch=16,
         col=ifelse(sce$Cluster==platelets, "blue", "red"))
 }
+```
+
+Of course, platelets are a rather extreme example, but one can imagine more subtle cases where real biology is lost.
+The code demonstrates this effect more clearly, where most library size-associated variation is discarded.
+This occurs even for those genes where expression is negatively correlated with library size, 
+such that any trend is unlikely to be a technical ecffect.
+
+```{r, fig.wide=TRUE}
+ngenes <- 10000
+means <- 2^sort(runif(ngenes, 5, 10))
+ncells <- 500
+counts <- matrix(rnbinom(ngenes*ncells, mu=means, size=10), ncol=ncells)
+
+# Some structure (imperfectly) correlated with library size.
+counts[1,] <- rnbinom(ncells, mu=1:500, size=10)
+counts[2,] <- rnbinom(ncells, mu=500:1, size=10)
+rownames(counts) <- sprintf("GENE_%i", seq_len(ngenes))
+colnames(counts) <- sprintf("CELL_%i", seq_len(ncells))
+
+vst.out <- vst(counts, show_progress=FALSE)
+stuff <- get_residuals(vst.out, counts,
+    cell_attr=data.frame(log_umi=log(colSums(counts))),
+    show_progress=FALSE)
+
+var(stuff[1,])
+var(stuff[2,])
+summary(matrixStats::rowVars(stuff))
 ```
 
 The transformed values are also uninterpretable, with no relation to the original scale of the (log-)counts at all.
