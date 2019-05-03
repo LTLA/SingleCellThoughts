@@ -152,18 +152,12 @@ Less squeezing occurs at higher counts, resulting in a distortion of the log-fol
 The `r Githubpkg("ChristophH/sctransform")` package fits a negative binomial GLM to each gene and yields Pearson residuals as the transformed values [@hafemeister2019normalization].
 This is not dissimilar to the `zscoreNBinom` function from `r Biocpkg("edgeR")`, which does a similar conversion of count data to a continuous space based on the NB distribution.
 Users can then operate on the residuals in downstream exploratory analyses like dimensionality reduction and clustering.
+One problem, as mentioned before, is that it is impossible to achieve variance stabilization at low counts.
 
-One problem is that the function does not actually achieve variance stabilization, even in a simple case.
-There are several major issues in the example below -
- the irregular behaviour at low abundances,
- the lack of any increase in the variance for the subset of "highly variable genes",
- and the complete loss of all variation at high abundances.
-
-
-```{r, fig.wide=TRUE}
+```{r}
 library(sctransform)
 ngenes <- 10000
-means <- 2^sort(runif(ngenes, 5, 10))
+means <- 2^sort(runif(ngenes, 0, 10))
 dispersion <- rep(0.1, ngenes)
 dispersion[sample(ngenes, 1000)] <- 1
 
@@ -174,78 +168,57 @@ rownames(counts) <- sprintf("GENE_%i", seq_len(ngenes))
 colnames(counts) <- sprintf("CELL_%i", seq_len(ncells))
 
 vst.out <- vst(counts, show_progress=FALSE)
-stuff <- get_residuals(vst.out, counts,
-    cell_attr=data.frame(log_umi=log(colSums(counts))),
-    show_progress=FALSE)
-
-par(mfrow=c(1,2))
-plot(means, matrixStats::rowVars(stuff), main="scTransform")
-plot(means, matrixStats::rowVars(counts), main="Untransformed")
+plot(means, matrixStats::rowVars(vst.out$y), log="xy")
 ```
 
-The use of the log-total count as a covariate in the GLM fit is also concerning.
-Any biology correlated with the total count (e.g., involving differences in total RNA content) may be regressed out.
-Below is an example of this effect using pre-processed `r Biocpkg("simpleSingleCell", "tenx.html", "PBMC data")`,
-where `sctransform`ed data results in loss of marker expression in over half of the platelet population.
-(There is also some gain of expression in non-expressing cells, which is not expected for a transformation method.)
-
-```{r, fig.wide=TRUE, eval=file.exists("pbmc_data.rds")}
-# To construct pbmc_data.rds:
-#   git clone https://github.com/MarioniLab/simpleSingleCell
-#   cd simpleSingleCell/vignettes
-#   R --slave --no-save -e "rmarkdown::render('tenx.Rmd')"
-library(SingleCellExperiment)
-sce <- readRDS("pbmc_data.rds")
-
-# AL: as of time of writing, cluster 9 was the platelet cluster;
-# see the link to the PBMC data above for updates. Any other 
-# cluster other than '9' can be used as the counterpart.
-platelets <- "9"
-sce <- sce[,sce$Cluster %in% c(platelets,"2")]
-
-vst.out <- vst(counts(sce), show_progress=FALSE)
-stuff <- get_residuals(vst.out, counts(sce),
-    cell_attr=data.frame(log_umi=log(colSums(counts(sce)))),
-    show_progress=FALSE)
-
-par(mfrow=c(1,3))
-for (gene in c("PF4", "SDPR", "PPBP")) {
-    plot(y=stuff[gene,], x=logcounts(sce)[gene,], xlab="Log-counts",
-        ylab="scTransformed", main=gene, pch=16,
-        col=ifelse(sce$Cluster==platelets, "blue", "red"))
-}
-```
-
-Of course, platelets are a rather extreme example, but one can imagine more subtle cases where real biology is lost.
-The code demonstrates this effect more clearly, where most library size-associated variation is discarded.
-This occurs even for those genes where expression is negatively correlated with library size, 
-such that any trend is unlikely to be a technical ecffect.
+While the use of the log-total count as a covariate in the GLM fit is somewhat concerning, 
+it is protected by using the regularized (i.e., abundance-trended) estimates of all coefficients.
+This assumes that most genes are not correlated at a given abundance, equivalent to the assumption of `r Biocpkg("SCnorm")`.
+It is likely that this is a reasonable assumption in the majority of cases.
+Nonetheless, some biological variation will be regressed out in the case where this assumption fails.
 
 ```{r, fig.wide=TRUE}
 ngenes <- 10000
-means <- 2^sort(runif(ngenes, 5, 10))
+means <- 2^sort(runif(ngenes, 0, 10))
 ncells <- 500
 counts <- matrix(rnbinom(ngenes*ncells, mu=means, size=10), ncol=ncells)
 
-# Some structure (imperfectly) correlated with library size.
-counts[1,] <- rnbinom(ncells, mu=1:500, size=10)
-counts[2,] <- rnbinom(ncells, mu=500:1, size=10)
+# Some structure (imperfectly) correlated with library size,
+# concentrated around the mean of mean(1:500).
+N <- 1000
+for (i in 1:N) { 
+    counts[i,] <- rnbinom(ncells, mu=1:500, size=10)
+}
 rownames(counts) <- sprintf("GENE_%i", seq_len(ngenes))
 colnames(counts) <- sprintf("CELL_%i", seq_len(ncells))
 
 vst.out <- vst(counts, show_progress=FALSE)
-stuff <- get_residuals(vst.out, counts,
-    cell_attr=data.frame(log_umi=log(colSums(counts))),
-    show_progress=FALSE)
-
-var(stuff[1,])
-var(stuff[2,])
-summary(matrixStats::rowVars(stuff))
+normed <- t(t(counts)/scater::librarySizeFactors(counts))
+plot(
+    matrixStats::rowVars(log(normed+1)),
+    matrixStats::rowVars(vst.out$y),
+    col=1+as.integer(seq_len(ngenes) <= N),
+    xlab="Log expression variance",
+    ylab="scTransform variance"
+)
 ```
 
 The transformed values are also uninterpretable, with no relation to the original scale of the (log-)counts at all.
 This is not a problem for exploratory analyses but makes them useless for meaningful differential expression analyses.
 Thus, it is rather unfortunate that they are being recommended for such a purpose.
+
+```{r}
+ngenes <- 10000
+means <- 2^sort(runif(ngenes, 0, 10))
+ncells <- 500
+
+counts <- matrix(rnbinom(ngenes*ncells, mu=means, size=10), ncol=ncells)
+rownames(counts) <- sprintf("GENE_%i", seq_len(ngenes))
+colnames(counts) <- sprintf("CELL_%i", seq_len(ncells))
+
+vst.out <- vst(counts, show_progress=FALSE)
+smoothScatter(log(counts+1), vst.out$y)
+```
 
 # Concluding remarks
 
