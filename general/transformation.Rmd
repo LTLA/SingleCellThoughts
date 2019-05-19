@@ -15,45 +15,71 @@ knitr::opts_chunk$set(error=FALSE, message=FALSE, warning=FALSE)
 set.seed(120000)
 ```
 
-# Rationale
+# Background
 
-Transformation of expression data aims to achieve variance stabilization, i.e., an identical noise distribution for all observations.
+Transformation of expression data aims to achieve variance stabilization, 
+i.e., an identical noise distribution for all observations.
 This simplifies downstream analyses by circumventing the need for complex models to account for the mean-variance relationship.
 For example, one could apply linear models directly under the assumption of i.i.d. normal errors. 
-
 In the context of scRNA-seq data analysis, the motivation for transformation is more nebulous.
 Most common procedures are not model-based and do not assume i.i.d. errors in the first place.
-Nonetheless, there are some benefits to using transformed data, which allows us:
+Nonetheless, there are some benefits to using transformed data, which we will discuss below.
 
-- To avoid high-abundance genes from driving population heterogeneity, simply because they have higher variance.
-  Transformation aims to equalize the contribution of all genes to high-dimensional procedures like clustering.
-- To ensure that the population variance is independent of the coverage of that population.
-  For example, a population with deeper sequencing/coverage would have larger counts and greater variance without transformation,
-  which may be misleading for comparisons of heterogeneity (e.g., to study differentiation priming).
-- To improve the dynamic range of expression values and thus resolution of differences.
-  For example, in a mixture of three populations with mean counts of 1, 10 and 100, 
-  the first two are effectively indistinguishable without transformation.
-- To simplify interpretation of downstream statistics.
-  In particular, distances in log-transformed data can be treated as an estimate of the log-fold change in the (normalized) counts.
+# Effects of variance stabilization
 
-# Philosophical issues
+## Implicit feature selection
 
-Let's assume that it is possible to equalize the contribution of each gene to population heterogeneity.
-There is no reason that this would offer any benefit to the downstream analysis. 
-For example, if relevant expression differences occurred in high-abundance genes, 
+One major effect of variance stabilization is that of implicit feature selection, or "feature weighting".
+In untransformed data, high-abundance genes would drive population heterogeneity simply because they have higher variance.
+Log-transformation downweights the contribution of those genes to high-dimensional procedures like clustering.
+Other transformations do the same task, only differing in the extent of the reweighting with respect to abundance.
+
+Whether or not this effect is desirable is another question.
+High-abundance genes are dominated by constitutively expressed genes that are typically not useful for cell type identification,
+so downweighting their contribution to the variance is a fairly standard operation.
+However, if relevant expression differences occurred in high-abundance genes (e.g., ribosome synthesis is of interest),
 it would be better to avoid transformation prior to procedures such as clustering.
-Of course, this is unlikely to be the case but it is equally unlikely to assume that relevant genes will be evenly distributed across the abundance range.
 
-Attempting to equalize the contribution of each gene may also be misguided in a biological context.
-For example, in log-transformed data, highly expressed genes will often have very low variances.
-This mean-variance relationship can be considered to be biologically relevant as such genes need to be stably expressed.
-Removing it with variance stabilization may do more harm than good in downstream analyses.
+Assuming that the reweighting is desirable, we now need to consider which transformation yields the optimum weights.
+In this respect, a true variance stabilizing transformation may be less performant than a simple log-transformation.
+This is because the log-transformation strongly downweights the contribution from (presumed uninteresting) high-abundance genes.
+Increasing their weight with a VST will re-introduce unnecessary noise into the downstream analysis.
 
 The optimal transformation would be the one that gave greatest weight to the abundance interval containing the most relevant genes.
-Of course, the relevance of a gene is either unknown or in the eye of the beholder;
-however, generally speaking, this refers to genes that have only moderate-to-low average expression across the data set.
+Generally speaking, this refers to genes that have only moderate-to-low average expression across the data set.
 This is because they are likely to be upregulated in some cells and downregulated in others,
 and thus be associated with biological heterogeneity within the population.
+
+Of course, the actual relevance of a gene is either unknown or in the eye of the beholder.
+The log-transformation's choice of pseudo-count allows users to tune the most highly weighted interval,
+with larger pseudo-counts favouring higher implicit weights for genes at higher abundances.
+One appeal of a true VST is that it would assume nothing about the choice of interval,
+sacrificing optimal performance for some robustness across different data sets.
+
+## Handling library size effects
+
+Variance stabilization ensures that the population variance is independent of the coverage of that population.
+For example, a population with deeper sequencing/coverage would have lower variance in the normalized expression values,
+which may be misleading for comparisons of heterogeneity (e.g., to study differentiation priming).
+Similarly, a population that contains a spread of library sizes will exhibit some structure whereby high-coverage cells are enveloped by low-coverage cells.
+A VST aims to remove such library size-dependent differences in variance,
+which is only possible when the mean-abundance trend is eliminated.
+
+Admittedly, differences in variance tend not to the primary focus of the analysis.
+Of greater concern is the absence of any guarantee that the equality of expectations is preserved after transformation.
+To illustrate, consider a situation where the normalized expression from cells of different coverage have equal expectations.
+If this equality is not preserved in transformed data, the transformation will have re-introduced coverage-dependent structure.
+This clearly occurs with the log-transformation [@lun2018overcoming],
+and the second-order Taylor approximation suggests that it will occur to some extent for all transformations.
+
+## Other
+
+Transformation can to improve the dynamic range of expression values and thus resolution of differences.
+For example, in a mixture of three populations with mean counts of 1, 10 and 100, 
+the first two are effectively indistinguishable without transformation.
+
+Transformation can also simplify interpretation of downstream statistics.
+In particular, distances in log-transformed data can be treated as an estimate of the log-fold change in the (normalized) counts.
 
 # Practical challenges
 
