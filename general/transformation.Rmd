@@ -15,49 +15,251 @@ knitr::opts_chunk$set(error=FALSE, message=FALSE, warning=FALSE)
 set.seed(120000)
 ```
 
-# Rationale
+# Background
 
-Transformation of expression data aims to achieve variance stabilization, i.e., an identical noise distribution for all observations.
+Transformation of expression data usually aims to achieve variance stabilization,
+i.e., the expected precision of each transformed value should be the same. 
 This simplifies downstream analyses by circumventing the need for complex models to account for the mean-variance relationship.
 For example, one could apply linear models directly under the assumption of i.i.d. normal errors. 
-
-In the context of scRNA-seq data analysis, the motivation for transformation is more nebulous.
+However, the motivation for variance stabilization is more nebulous in the context of scRNA-seq data analysis. 
 Most common procedures are not model-based and do not assume i.i.d. errors in the first place.
-Nonetheless, there are some benefits to using transformed data, which allows us:
 
-- To avoid high-abundance genes from driving population heterogeneity, simply because they have higher variance.
-  Transformation aims to equalize the contribution of all genes to high-dimensional procedures like clustering.
-- To ensure that the population variance is independent of the coverage of that population.
-  For example, a population with deeper sequencing/coverage would have larger counts and greater variance without transformation,
-  which may be misleading for comparisons of heterogeneity (e.g., to study differentiation priming).
-- To improve the dynamic range of expression values and thus resolution of differences.
-  For example, in a mixture of three populations with mean counts of 1, 10 and 100, 
-  the first two are effectively indistinguishable without transformation.
-- To simplify interpretation of downstream statistics.
-  In particular, distances in log-transformed data can be treated as an estimate of the log-fold change in the (normalized) counts.
+Here, we will discuss some of the consequences of using variance stabilizing transformations (VSTs) for scRNA-seq.
+We will base our discussions on the square root transformation, which is the VST for Poisson-distributed counts;
+the log-transformation for log-normal variates (which provides a near-VST for Gamma variates and large negative binomial counts);
+the general purpose VST from `r Biocpkg("DESeq2")` [@anders2010differential];
+and the VST from `r Biocpkg("sctransform")` [@hafemeister2019normalization].
 
-# Philosophical issues
+# Transformation as feature selection
 
-Let's assume that it is possible to equalize the contribution of each gene to population heterogeneity.
-There is no reason that this would offer any benefit to the downstream analysis. 
-For example, if relevant expression differences occurred in high-abundance genes, 
-it would be better to avoid transformation prior to procedures such as clustering.
-Of course, this is unlikely to be the case but it is equally unlikely to assume that relevant genes will be evenly distributed across the abundance range.
+## Introduction
 
-Attempting to equalize the contribution of each gene may also be misguided in a biological context.
-For example, in log-transformed data, highly expressed genes will often have very low variances.
-This mean-variance relationship can be considered to be biologically relevant as such genes need to be stably expressed.
-Removing it with variance stabilization may do more harm than good in downstream analyses.
+The transformation determines the type of variation that contributes most to downstream analyses.
+In this respect, the choice of transformation also serves as an implicit feature selection (or "weighting") step.
+A linear transformation would favour genes with large counts as these have the greatest absolute differences.
+This is usually undesirable as high-abundance genes are often constitutively expressed,
+and thus not informative for distinguishing cell types or states.
+A log-transformation is more conventional as it favours genes with large relative differences,
+downweighting high-abundance genes that usually exhibit small fold-differences between cells.
 
-The optimal transformation would be the one that gave greatest weight to the abundance interval containing the most relevant genes.
-Of course, the relevance of a gene is either unknown or in the eye of the beholder;
-however, generally speaking, this refers to genes that have only moderate-to-low average expression across the data set.
-This is because they are likely to be upregulated in some cells and downregulated in others,
-and thus be associated with biological heterogeneity within the population.
+## Example with Poisson noise
 
-# Practical challenges
+Consider a scenario containing Poisson-distributed counts.
+Here, the VST is the square-root function, which we duly apply.
+This yields a mean-variance trend that plateaus at large counts, as expected.
 
-## With low counts
+```{r}
+library(matrixStats)
+mu <- 2^runif(1000, -5, 10)
+y <- matrix(rpois(length(mu)*1000, lambda=mu), nrow=length(mu))
+v <- rowVars(sqrt(y))
+plot(mu, v, xlab="Mean", ylab="Variance", log="x")
+```
+
+Now, let us introduce some differential expression between two groups of cells.
+The `ADD_DE` function simply adds a random set of highly variable genes (HVGs) in a balanced manner, 
+i.e., the library size of each cell and the average abundance of each gene are unchanged.
+In this case, the increase in variability is due to a two-fold change in abundance between two groups of cells,
+but any source of additional variation can be used.
+
+```{r}
+ADD_DE <- function(means, ncells, fc=2) {
+    if (!is.matrix(means)) {
+        means <- matrix(means, nrow=length(means), ncol=ncells)
+    }
+    first <- 1:100
+    second <- first + 100
+    N <- ncells/2
+    g1 <- 1:N
+    g2 <- N+g1
+
+    F <- sqrt(fc)
+    means[first,g1] <- means[first,g1]*F
+    means[first,g2] <- means[first,g2]/F
+    means[second,g1] <- means[second,g1]/F
+    means[second,g2] <- means[second,g2]*F
+    means
+}
+```
+
+After transformation, the contribution of variance from each HVG is proportional to the gene's abundance.
+This is caused by the fact that the VST phrases the variance in terms of differences in square-root means.
+The fold-difference in the means between groups is constant with abundance, but the difference in the root-means is not.
+As a result, downstream analyses on the rooted counts will be driven by the high-abundance genes.
+
+```{r}
+means <- ADD_DE(mu, 1000)
+y2 <- matrix(rpois(length(means), lambda=means), nrow=nrow(means))
+v2 <- rowVars(sqrt(y2))
+plot(mu, v2, xlab="Mean", ylab="Variance", log="xy")
+```
+
+By comparison, the log-transformation avoids a major trend in abundance with respect to the HVGs,
+even though it fails to stabilize the variance due to the Poisson component.
+
+```{r}
+vl <- rowVars(log(y2+1))
+plot(mu, vl, xlab="Mean", ylab="Variance", log="xy")
+```
+
+## Example with overdispersed counts 
+
+We repeat this simulation with negative binomial-distributed counts.
+The parameters have been tweaked slightly to demonstrate the effects more clearly
+(and to avoid some warnings from `DESeq2::vst()`).
+
+```{r}
+ngenes <- 10000
+mu <- 2^runif(ngenes, 0, 10)
+means <- ADD_DE(mu, 200, fc=5)
+
+ncells <- 500
+counts <- matrix(rnbinom(ngenes*ncells, mu=means, 
+    size=10), ncol=ncells)
+rownames(counts) <- sprintf("GENE_%i", seq_len(ngenes))
+colnames(counts) <- sprintf("CELL_%i", seq_len(ncells))
+```
+
+Again, the contribution of variance from the transformed values of each HVG is proportional to the gene's abundance.
+This reflects the fact that differences in the transformed values no longer reflect the original (constant) log-fold change. 
+Consequently, downstream analyses will be primarily driven by the high-abundance HVGs.
+
+```{r}
+outDS <- DESeq2::vst(counts)
+outSC <- sctransform::vst(counts, show_progress=FALSE)
+
+par(mfrow=c(1,2))
+plot(mu, matrixStats::rowVars(outDS), log="xy", main="DESeq2")
+plot(mu, matrixStats::rowVars(outSC$y), log="xy", main="sctransform")
+```
+
+By comparison, the HVG variance after log-transformation plateaus quickly and avoids a strong mean-dependence at high counts.
+
+```{r}
+vl <- rowVars(log(counts+1))
+plot(mu, vl, xlab="Mean", ylab="Variance", log="xy")
+```
+
+## Summary
+
+These scenarios demonstrate how transformation is intimately linked with implicit feature selection.
+Different transformations will increase the variance of different sets of genes,
+which has major implications for the outcome of downstream analyses.
+The best transformation is the one that favours genes with the most relevant type of variation,
+though exactly what this might be is debatable.
+The main arguments for the log-transformation are that:
+
+- Fold-differences are typically more relevant in applications where the absolute value (of counts or expression values) cannot be easily interpreted.
+- It can improve the dynamic range of expression values and thus resolution of differences.
+For example, in a mixture of three populations with mean counts of 1, 10 and 100, 
+the first two are effectively indistinguishable without log-transformation.
+- It can simplify interpretation of downstream statistics.
+In particular, distances in log-transformed data can be treated as an estimate of the log-fold change in the (normalized) counts.
+
+# Handling differences in library size
+
+## Introduction
+
+Variance stabilization ensures that the population variance is independent of the coverage of that population.
+For example, a population with deeper sequencing/coverage would have lower variance in the normalized expression values,
+which may be misleading for comparisons of heterogeneity (e.g., to study differentiation priming).
+Similarly, a population that contains a spread of library sizes will exhibit some structure whereby high-coverage cells are enveloped by low-coverage cells.
+A VST aims to remove such library size-dependent differences in variance,
+which is only possible when the mean-abundance trend is eliminated.
+
+Admittedly, differences in variance tend not to the primary focus of the analysis.
+Of greater concern is the absence of any guarantee that the equality of expectations is preserved after transformation.
+To illustrate, consider a situation where the normalized expression from cells of different coverage have equal expectations.
+If this equality is not preserved in transformed data, the transformation will have re-introduced coverage-dependent structure.
+This clearly occurs with the log-transformation [@lun2018overcoming],
+and the second-order Taylor approximation suggests that it will occur to some extent for all transformations.
+
+## Unequal expectations after transformation
+
+Consider a situation with libaries of different sizes.
+This should have no structure after library size normalization.
+
+```{r}
+ngenes <- 10000
+ncells <- 200
+mu <- 2^runif(ngenes, 0, 10)
+libsize <- rep(rep(c(0.5, 2), each=50), 2)
+means <- outer(mu, libsize)
+
+counts <- matrix(rnbinom(ngenes*ncol(means), mu=means, size=100), 
+    ncol=ncol(means))
+rownames(counts) <- sprintf("GENE_%i", seq_len(ngenes))
+colnames(counts) <- sprintf("CELL_%i", seq_len(ncells))
+```
+
+We can see that both VSTs fail to fully preserve the equality of expected normalized expression values,
+with some structure correlated to the library size.
+
+```{r}
+outDS <- DESeq2::vst(counts)
+outSC <- sctransform::vst(counts, show_progress=FALSE)
+
+pcDS <- prcomp(t(outDS))
+pc.sc <- prcomp(t(outSC$y))
+
+par(mfrow=c(1,2))
+plot(pcDS$x[,1], pcDS$x[,2], col=(libsize > 1)+1,
+    main="DESeq2", xlab="PC1", ylab="PC2")
+plot(pc.sc$x[,1], pc.sc$x[,2], col=(libsize > 1)+1,
+    main="sctransform", xlab="PC1", ylab="PC2")
+```
+
+`r CRANpkg("sctransform")` seems more performant in this example, with weaker structure associated with the library size.
+However, the advantage disappears when one introduces more complexity.
+The simulation below separates the cells into two populations, where each population contains a variety of libary sizes.
+After normalization, we should see only separation between populations.
+
+```{r}
+means <- outer(mu, libsize)
+
+first <- 1:100
+second <- first + 100
+g1 <- 1:100
+g2 <- 100+g1
+means[first,g1] <- means[first,g1]*2
+means[first,g2] <- means[first,g2]/2
+means[second,g1] <- means[second,g1]/2
+means[second,g2] <- means[second,g2]*2
+
+counts <- matrix(rnbinom(ngenes*ncol(means), mu=means, size=100), 
+    ncol=ncol(means))
+rownames(counts) <- sprintf("GENE_%i", seq_len(ngenes))
+colnames(counts) <- sprintf("CELL_%i", seq_len(ncells))
+```
+
+We see that both VSTs now yield separate structures according to the library size.
+This serves to demonstrate that the equality of expectations is not guaranteed to be preserved after transformation.
+In fact, `r CRANpkg("sctransform")` manages to invert the positions of the size-related structure, which is rather unexpected.
+
+```{r}
+outDS <- DESeq2::vst(counts)
+outSC <- sctransform::vst(counts, show_progress=FALSE)
+
+pcDS <- prcomp(t(outDS))
+pcSC <- prcomp(t(outSC$y))
+
+par(mfrow=c(1,2))
+plot(pcDS$x[,1], pcDS$x[,2], col=(libsize > 1)+1,
+    main="DESeq2", xlab="PC1", ylab="PC2")
+plot(pcSC$x[,1], pcSC$x[,2], col=(libsize > 1)+1,
+    main="sctransform", xlab="PC1", ylab="PC2")
+```
+
+## Summary
+
+Of course, the above example is somewhat pathological.
+We might actually consider consistent differences in library sizes to be a valid marker of a distinct subpopulation,
+such that the structure observed above is scientifically informative.
+In practice, we would expect to see a smooth distribution of library sizes due to technical variation in coverage.
+This means that any library size-related structure induced by transformation would more likely form spurious trajectories - 
+which, arguably, can be just as problematic.
+
+# Instability at low counts
 
 No transformation can achieve complete variance stabilization in scRNA-seq data [@lun2018overcoming], especially UMI data.
 At a mean of zero, the variance is necessarily zero.
@@ -65,114 +267,17 @@ At any non-zero mean, the variance can only increase from zero.
 Thus, there is an inherent mean-variance relationship that cannot be removed by any (monotonic) transformation.
 This is particularly relevant for UMI data due to the low counts and high frequency of zeroes.
 
-## Handling biological variation
+Of course, the trend near zero can be minimized by using a transformation that narrows the interval to stabilization.
+If a sufficiently narrow interval is achieved, very low-abundance genes with few non-zero counts will have the same contribution to population heterogeneity as genes with higher expression.
+However, this is problematic given that Poisson noise dominates at such low counts.
+Upweighting this technical noise would probably be counter-productive.
 
-Transformation to stabilize noise will not necessarily remove the mean dependence on the biological variation.
-Consider some counts with Poisson-distributed noise. 
-For the Poisson distribution, the variance stabilizing transformation (VST) is the square root function.
-While this stabilizes the Poisson component at high means, any overdispersion will manifest as an increasing mean-variance trend:
+# Miscellaneous comments
 
-```{r, fig.wide=TRUE}
-library(matrixStats)
-mu <- 2^seq(0, 10, length.out=100)
-y <- matrix(rpois(length(mu)*1000, lambda=mu), nrow=length(mu))
-v <- rowVars(sqrt(y))
+## Library size regression
 
-y2 <- matrix(rnbinom(length(mu)*1000, mu=mu, size=10), nrow=length(mu))
-v2 <- rowVars(sqrt(y2))
-
-par(mfrow=c(1,2))
-plot(mu, v, xlab="Mean", ylab="Variance", main="Poisson", log="x")
-plot(mu, v2, xlab="Mean", ylab="Variance", main="Overdispersed", log="x")
-```
-
-This is unlikely to be desirable, as it means that high-abundance genes can dominate the downstream analyses.
-Similarly, a two-fold change in expression has a different effect depending on the abundance:
-
-```{r}
-y3 <- cbind(
-    matrix(rpois(length(mu)*500, lambda=mu), nrow=length(mu)),
-    matrix(rpois(length(mu)*500, lambda=mu*2), nrow=length(mu))
-)
-v3 <- rowVars(sqrt(y3))
-plot(mu, v3, xlab="Mean", ylab="Variance", main="Overdispersed", log="x")
-vl <- rowVars(log(y3+1)) # log-transformation, for comparison.
-plot(mu, vl, xlab="Mean", ylab="Variance", main="Overdispersed", log="x")
-```
-
-This is most obviously problematic for high-dimensional procedures that involve implicit comparisons between genes, e.g., clustering.
-However, it will also compromise any comparisons across different means, e.g., log-fold change estimates, testing for interaction effects.
-
-One might suggest that the choice of VST should instead be based on the mean-variance relationship after including the biological component.
-This simply shifts the problem; any overdispersion above the trend would have different effects at different means.
-We will explore this more in the next section.
-
-# Empirically determining the best VST
-
-It was proposed to me that we should use the `vst` function from `r Biocpkg("DESeq2")` to perform the transformation.
-However, this does not avoid any of the issues described above with inappropriate scaling of the biological component.
-Consider the following example, where two genes separate two groups of cells:
-
-```{r}
-set.seed(1000)
-ngenes <- 1000
-means <- 2^sort(runif(ngenes, 5, 10))
-dispersion <- 10/means + 0.1
-
-ncells <- 200
-counts <- matrix(rnbinom(ngenes*ncells, mu=means, size=1/dispersion), 
-    ncol=ncells)
-
-# Adding DE at low and high abundances.
-half <- seq_len(100)
-counts[1,half] <- rnbinom(ncells/2, mu=means[1]*2, size=1/dispersion[1])
-counts[ngenes,half] <- rnbinom(ncells/2, mu=means[ngenes]*2, 
-    size=1/dispersion[ngenes])
-```
-
-Using `vst` and a simple log-transformation in this simulation indicates that only the latter preserves the size of the log-fold change across abundances.
-
-```{r}
-library(DESeq2)
-outV <- vst(counts)
-mean(outV[1,half]) - mean(outV[1,-half]) # not 1.
-mean(outV[ngenes,half]) - mean(outV[ngenes,-half]) # close to 1.
-
-outL <- log2(counts + 1)    
-mean(outL[1,half]) - mean(outL[1,-half]) # close to 1.
-mean(outL[ngenes,half]) - mean(outL[ngenes,-half]) # close to 1.
-```
-
-The counts are pretty large here, so the value of the pseudo-count should not be an issue, nor should there be any shrinkage to compensate for Poisson noise.
-Rather, this is due to the fact that `vst` automatically squeezes values together more strongly when the count data are noisy, in order to stabilize the variance.
-Less squeezing occurs at higher counts, resulting in a distortion of the log-fold changes (equivalent to that of the biological component).
-
-# Dissecting `scTransform`
-
-The `r Githubpkg("ChristophH/sctransform")` package fits a negative binomial GLM to each gene and yields Pearson residuals as the transformed values [@hafemeister2019normalization].
-This is not dissimilar to the `zscoreNBinom` function from `r Biocpkg("edgeR")`, which does a similar conversion of count data to a continuous space based on the NB distribution.
-Users can then operate on the residuals in downstream exploratory analyses like dimensionality reduction and clustering.
-One problem, as mentioned before, is that it is impossible to achieve variance stabilization at low counts.
-
-```{r}
-library(sctransform)
-ngenes <- 10000
-means <- 2^sort(runif(ngenes, 0, 10))
-dispersion <- rep(0.1, ngenes)
-dispersion[sample(ngenes, 1000)] <- 1
-
-ncells <- 500
-counts <- matrix(rnbinom(ngenes*ncells, mu=means, 
-    size=1/dispersion), ncol=ncells)
-rownames(counts) <- sprintf("GENE_%i", seq_len(ngenes))
-colnames(counts) <- sprintf("CELL_%i", seq_len(ncells))
-
-vst.out <- vst(counts, show_progress=FALSE)
-plot(means, matrixStats::rowVars(vst.out$y), log="xy")
-```
-
-While the use of the log-total count as a covariate in the GLM fit is somewhat concerning, 
-it is protected by using the regularized (i.e., abundance-trended) estimates of all coefficients.
+The use of the log-total count as a covariate in the GLM fit of `r CRANpkg("sctransform")` is somewhat concerning.
+However, it is protected by using the regularized (i.e., abundance-trended) estimates of all coefficients.
 This assumes that most genes are not correlated at a given abundance, equivalent to the assumption of `r Biocpkg("SCnorm")`.
 It is likely that this is a reasonable assumption in the majority of cases.
 Nonetheless, some biological variation will be regressed out in the case where this assumption fails.
@@ -192,20 +297,21 @@ for (i in 1:N) {
 rownames(counts) <- sprintf("GENE_%i", seq_len(ngenes))
 colnames(counts) <- sprintf("CELL_%i", seq_len(ncells))
 
-vst.out <- vst(counts, show_progress=FALSE)
+outSC <- sctransform::vst(counts, show_progress=FALSE)
 normed <- t(t(counts)/scater::librarySizeFactors(counts))
 plot(
     matrixStats::rowVars(log(normed+1)),
-    matrixStats::rowVars(vst.out$y),
+    matrixStats::rowVars(outSC$y),
     col=1+as.integer(seq_len(ngenes) <= N),
     xlab="Log expression variance",
     ylab="scTransform variance"
 )
 ```
 
-The transformed values are also uninterpretable, with no relation to the original scale of the (log-)counts at all.
-This is not a problem for exploratory analyses but makes them useless for meaningful differential expression analyses.
-Thus, it is rather unfortunate that they are being recommended for such a purpose.
+## Interpretation of VST'd values
+
+The transformed values from `r CRANpkg("sctransform")` exhibit no relation to the original scale of the (log-)counts.
+This is not a problem for exploratory analyses but makes it difficult to interpret differential expression analyses.
 
 ```{r}
 ngenes <- 10000
@@ -216,22 +322,62 @@ counts <- matrix(rnbinom(ngenes*ncells, mu=means, size=10), ncol=ncells)
 rownames(counts) <- sprintf("GENE_%i", seq_len(ngenes))
 colnames(counts) <- sprintf("CELL_%i", seq_len(ncells))
 
-vst.out <- vst(counts, show_progress=FALSE)
-smoothScatter(log(counts+1), vst.out$y)
+outSC <- sctransform::vst(counts, show_progress=FALSE)
+smoothScatter(matrixStats::rowVars(log2(counts+1)),
+    matrixStats::rowVars(outSC$y))
 ```
+
+`r Biocpkg("DESeq2")`'s VST converges to the log-fold change at high abundances but it is not entirely faultless.
+A strong mean-dispersion trend is sufficient to induce major discrepancies, 
+even when the counts should have been sufficiently large to obtain an accurate log-fold change estimate.
+
+```{r}
+ngenes <- 10000
+ncells <- 200
+
+mu <- 2^runif(ngenes, 5, 10)
+dispersion <- 10/mu + 0.1
+means <- ADD_DE(mu, ncells)
+counts <- matrix(rnbinom(ngenes*ncells, mu=means, 
+    size=1/dispersion), ncol=ncells)
+
+first <- 1:100
+g1 <- 1:100
+g2 <- 1:100+100
+outDS <- DESeq2::vst(counts)
+plot(mu[first], (rowMeans(outDS[first,g1]) - rowMeans(outDS[first,g2])), log="x")
+outL <- log2(counts + 1)
+plot(mu[first], (rowMeans(outL[first,g1]) - rowMeans(outL[first,g2])), log="x")
+```
+
+## Loss of sparsity
+
+A major practical issue with both VSTs is that they are not sparsity preserving.
+This affects the computational performance of all downstream analyses that are performed on the transformed data.
+One could avoid this by performing feature selection and the VST at the same time,
+such that the dense transformed values are only returned for the features of interest.
+However, it is questionable whether or not this provides benefits worth the increased complexity.
+
+## Pseudo-counts and log-transformation
+
+The log-transformation is often criticised due to the arbitrariness of choosing a pseudo-count.
+However, this is no more arbitrary than deciding that relative differences are of greatest interest
+(and not, say, absolute differences in the counts, or differences in the root-means).
+Indeed, complaining about arbitrariness in an exploratory analysis is rather ironic,
+especially in light of the many downstream procedures that explicitly or implicitly involve arbitrary parameter choices. 
+
+In principle, the pseudo-count can be interpreted as a tuning parameter for the transformaation.
+This could conceivably be used to adjust the relative contribution of genes of different abundance.
+Higher pseudo-counts would reduce both noise and biological signal from low-abundance genes,
+providing a simple approach for analysts to modify their feature selection strategy.
+In practice, this is not done, probably because the (arbitrary) choice of pseudo-count makes little difference!
 
 # Concluding remarks
 
-In a scRNA-seq context, transformation can be viewed as a feature weighting problem that depends on abundance.
-The choice of transformation will either upweight high-abundance genes or low-abundance genes,
-either due to imperfect stabilization of noise or due to the inability to stabilize overdispersion above the mean-variance trend.
-Once we accept this, it becomes clear that there is no optimal transformation without knowing the most important features _a priori_.
-
-To this end, the log-transformation is probably satisfactory.
-It is fast, simple to compute and ensures that log-fold changes are preserved as constant differences in the transformed space (at high abundances, at least).
-The main complaint is that the pseudo-count must be manually specified.
-However, we can view this as a tuning parameter that determines the abundance-dependent weighting,
-with smaller pseudo-counts increasing the weight of genes with lower abundances. 
+In most cases, the log-transformation is probably satisfactory.
+It is simple to compute, preserves sparsity and allows interpretation of differences as log-fold changes (for large counts, at least).
+It upweights genes with large relative changes in expression that are most likely to be biologically relevant.
+And if we put aside theoretical arguments, the widespread use of the log-transformation "in the wild" reflects its adequacy and reliability for most analysts.
 
 # Session information
 
