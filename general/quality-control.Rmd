@@ -8,6 +8,10 @@ output:
     toc_float: true
 ---
 
+```{r, echo=FALSE}
+knitr::opts_chunk$set(error=FALSE, warning=FALSE, message=FALSE)
+```
+
 # Background
 
 The perils of aggressive QC are probably overstated but are concerning enough that we ask ourselves -
@@ -88,18 +92,18 @@ table(sce$cluster, sce$discarded)
 ```
 
 The fun really starts when we look at the marker genes.
-We see that one of the clusters of discarded cells is intermediate for _INS_ and _GCG_, which is pretty unusual.
+We see that one of the clusters of discarded cells is intermediate for _INS_ and _SST_, which is pretty unusual.
 This is consistent with spurious "upregulation" of transcripts enriched in the ambient soup,
 which would have easily misled us if we did not know about the biology of the system.
 (You could even get unique spurious markers for this cluster, if the cell types contributing to the ambient soup did not survive.
 To be sure that upregulation is genuine, we would need to verify that it is present against the soup.)
 
-```{r}
+```{r, fig.wide=TRUE, fig.asp=1}
 markers <- findMarkers(sce, sce$cluster, direction="up", lfc=1)
 as.data.frame(markers[[3]][1:20,1:3])
 
 plotExpression(sce, x="cluster", 
-    features=c("INS__chr11", "GCG__chr2"),
+    features=c("INS__chr11", "SST__chr3", "REG1A__chr2", "REG3A__chr2"),
     colour_by="discarded")
 ```
 
@@ -124,6 +128,91 @@ filtered$cluster <- factor(igraph::cluster_walktrap(g)$membership)
 plotExpression(filtered, x="cluster", 
     features=c("INS__chr11", "GCG__chr2"),
     colour_by=I(log10(filtered$sum)))
+```
+
+# 10X PBMC, unfiltered
+
+This isn't entirely unfiltered as all 10X datasets will have undergone some filtering due to cell calling.
+Nonetheless, we can have a look at the types of cells that we get out from _CellRanger_.
+
+```{r}
+library(BiocFileCache)
+bfc <- BiocFileCache(ask=FALSE)
+out <- bfcrpath(bfc, file.path("http://cf.10xgenomics.com/samples/cell-exp",
+    "3.1.0/5k_pbmc_protein_v3/5k_pbmc_protein_v3_filtered_feature_bc_matrix.tar.gz"))
+
+exdir <- tempfile()
+untar(out, exdir=exdir)
+
+library(DropletUtils)
+sce <- read10xCounts(file.path(exdir, "filtered_feature_bc_matrix"))
+sce <- splitAltExps(sce, rowData(sce)$Type)
+sce
+```
+
+In this case, we only identify cells to be discarded on the basis of their mitochondrial content,
+assuming that the cell calling has filtered out most of the low-coverage droplets.
+
+```{r}
+library(scater)
+stats <- perCellQCMetrics(sce, subsets=list(Mt=grep("MT", rowData(sce)$Symbol)))
+discarded <- isOutlier(stats$subsets_Mt_percent, nmads=3, type="higher")
+sce$discarded <- discarded
+sum(discarded)
+```
+
+The mean-variance trend in the unfiltered dataset keeps going up, 
+consistent with our previous observations in the Grun pancreas data.
+
+```{r}
+library(scran)
+filtered <- sce[,!sce$discarded]
+filtered <- logNormCounts(filtered, use_altexps=FALSE)
+dec.f <- modelGeneVar(filtered)
+plot(metadata(dec.f)$mean, metadata(dec.f)$var)
+curve(metadata(dec.f)$trend(x), col="dodgerblue", add=TRUE)
+
+sce <- logNormCounts(sce, use_altexps=FALSE)
+dec.u <- modelGeneVar(sce)
+plot(metadata(dec.u)$mean, metadata(dec.u)$var)
+curve(metadata(dec.u)$trend(x), col="dodgerblue", add=TRUE)
+```
+
+The domination of the discarded cells in the PCA and $t$-SNE is even more obvious.
+
+```{r}
+set.seed(100)
+library(BiocSingular)
+sce <- runPCA(sce, subset_row=dec.u$bio > 0, BSPARAM=IrlbaParam())
+plotPCA(sce, colour_by="discarded")
+
+set.seed(101)
+sce <- runTSNE(sce, dimred="PCA")
+plotTSNE(sce, colour_by="discarded")
+```
+
+At least the discarded cells cluster together, and fortunately, the relevant cluster is identifiable based on the strong upregulation of mitochondrial genes.
+(Though this does raise the question of why we didn't just filter them out in the first place, if were going to use that metric to identify them.)
+
+```{r}
+g <- buildSNNGraph(sce, use.dimred="PCA")
+sce$cluster <- factor(igraph::cluster_walktrap(g)$membership)
+table(sce$cluster, sce$discarded)
+
+rownames(sce) <- uniquifyFeatureNames(
+    rowData(sce)$ID, rowData(sce)$Symbol)
+markers <- findMarkers(sce, sce$cluster, direction="up", lfc=1, full.stats=TRUE)
+as.data.frame(markers[[5]][1:20,1:3])
+```
+
+You might say that the mitochondrial proportion is not a good way of identifying low-quality cells.
+Fair enough, but if we had blinded ourselves to it, we wouldn't be able to identify this cluster as being low-quality based on its gene expression.
+There's at least a couple of genes that make it seems kind of biologically interesting.
+
+```{r}
+plotExpression(sce, x="cluster", 
+    features=c("IL7R", "CD69", "LTB", "MALAT1"),
+    colour_by="discarded")
 ```
 
 # Session information
