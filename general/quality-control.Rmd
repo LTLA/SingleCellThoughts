@@ -1,0 +1,222 @@
+---
+title: Quality control - what is it good for?
+author: Aaron Lun
+date: "`r Sys.Date()`"
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r, echo=FALSE}
+knitr::opts_chunk$set(error=FALSE, warning=FALSE, message=FALSE)
+```
+
+# Background
+
+The perils of aggressive QC are probably overstated but are concerning enough that we ask ourselves -
+why run the risk of doing QC at all, if you might throw out genuine cell types?
+Why not just put up with the presence of a "low quality cell" cluster?
+This document provides some case studies of what we can expect if we skip the QC step altogether.
+
+# Grun human pancreas, unfiltered 
+
+This dataset is useful as no quality control has been applied, 
+as we can see from the fact that all cell counts are multiples of 96.
+
+```{r}
+library(scRNAseq)
+sce <- GrunPancreasData()
+table(sce$donor, sce$sample)
+```
+
+We compute some QC metrics and identify those cells that _would have_ been removed,
+had we applied an outlier-based QC threshold.
+
+```{r}
+library(scater)
+sce <- addQCPerCell(sce)
+discarded <- quickCellQC(colData(sce),
+    percent_subsets="altexps_ERCC_percent", nmads=3)
+sce$discarded <- discarded$discard
+sce <- sce[,sce$sum > 0]
+```
+
+It is instructive to compare the mean-variance trends before and after QC.
+We see that the trend never stabilizes due to the continued prescence of dropouts - even in high-abundance genes -
+that introduce large variances from comparing zero and non-zero log-expression values.
+
+```{r}
+library(scran)
+filtered <- sce[,!sce$discarded]
+filtered <- logNormCounts(filtered, use_altexps=FALSE)
+dec.f <- modelGeneVar(filtered)
+plot(metadata(dec.f)$mean, metadata(dec.f)$var)
+curve(metadata(dec.f)$trend(x), col="dodgerblue", add=TRUE)
+
+sce <- logNormCounts(sce, use_altexps=FALSE)
+dec.u <- modelGeneVar(sce)
+plot(metadata(dec.u)$mean, metadata(dec.u)$var)
+curve(metadata(dec.u)$trend(x), col="dodgerblue", add=TRUE)
+```
+
+Similar issues are observed when we look at the PCA, 
+where the discarded cells lie on one of the corners and effectively drive the first two PCs.
+
+```{r}
+set.seed(100)
+library(BiocSingular)
+sce <- runPCA(sce, subset_row=dec.u$bio > 0, BSPARAM=IrlbaParam())
+plotPCA(sce, colour_by="discarded")
+```
+
+So, the variance modelling is compromised. 
+But perhaps that is not a major concern, as we can still identify the genes above the trend,
+and even the first two PCs still contain some information; it's not a total write-off.
+For a better visualization, let's have a look at the $t$-SNE:
+
+```{r}
+set.seed(101)
+sce <- runTSNE(sce, dimred="PCA")
+plotTSNE(sce, colour_by="discarded")
+```
+
+The discarded cells effectively form their own clusters rather than being distributed within the other clusters.
+This is annoying as it means that we must be explicitly on the look-out for one or more artificial clusters.
+(The saving grace is that once we do identify them, we can just remove the offenders in one go.)
+
+```{r}
+g <- buildSNNGraph(sce, use.dimred="PCA")
+sce$cluster <- factor(igraph::cluster_walktrap(g)$membership)
+table(sce$cluster, sce$discarded)
+```
+
+The fun really starts when we look at the marker genes.
+We see that one of the clusters of discarded cells is intermediate for _INS_ and _SST_, which is pretty unusual.
+This is consistent with spurious "upregulation" of transcripts enriched in the ambient soup,
+which would have easily misled us if we did not know about the biology of the system.
+(You could even get unique spurious markers for this cluster, if the cell types contributing to the ambient soup did not survive.
+To be sure that upregulation is genuine, we would need to verify that it is present against the soup.)
+
+```{r, fig.wide=TRUE, fig.asp=1}
+markers <- findMarkers(sce, sce$cluster, direction="up", lfc=1)
+as.data.frame(markers[[3]][1:20,1:3])
+
+plotExpression(sce, x="cluster", 
+    features=c("INS__chr11", "SST__chr3", "REG1A__chr2", "REG3A__chr2"),
+    colour_by="discarded")
+```
+
+This nonsense doesn't appear after the discarded cells are actually discarded.
+So in this scenario, the primary motivation for QC is to simplify the downstream interpretation,
+_even if_ it might result in the loss of cell types that the QC metrics discriminate against.
+The amount of cross-checking required to verify that a cluster is not just full of low-quality cells 
+is comparable to the cross-checking required to determine if a cell type was discarded by QC, 
+so we might as well take the more stringent route to avoid false positives.
+
+```{r}
+set.seed(100)
+library(BiocSingular)
+filtered <- runPCA(filtered, subset_row=dec.u$bio > 0, BSPARAM=IrlbaParam())
+
+set.seed(101)
+filtered <- runTSNE(filtered, dimred="PCA")
+
+g <- buildSNNGraph(filtered, use.dimred="PCA")
+filtered$cluster <- factor(igraph::cluster_walktrap(g)$membership)
+
+plotExpression(filtered, x="cluster", 
+    features=c("INS__chr11", "GCG__chr2"),
+    colour_by=I(log10(filtered$sum)))
+```
+
+# 10X PBMC, unfiltered
+
+This isn't entirely unfiltered as all 10X datasets will have undergone some filtering due to cell calling.
+Nonetheless, we can have a look at the types of cells that we get out from _CellRanger_.
+
+```{r}
+library(BiocFileCache)
+bfc <- BiocFileCache(ask=FALSE)
+out <- bfcrpath(bfc, file.path("http://cf.10xgenomics.com/samples/cell-exp",
+    "3.1.0/5k_pbmc_protein_v3/5k_pbmc_protein_v3_filtered_feature_bc_matrix.tar.gz"))
+
+exdir <- tempfile()
+untar(out, exdir=exdir)
+
+library(DropletUtils)
+sce <- read10xCounts(file.path(exdir, "filtered_feature_bc_matrix"))
+sce <- splitAltExps(sce, rowData(sce)$Type)
+sce
+```
+
+In this case, we only identify cells to be discarded on the basis of their mitochondrial content,
+assuming that the cell calling has filtered out most of the low-coverage droplets.
+
+```{r}
+library(scater)
+stats <- perCellQCMetrics(sce, subsets=list(Mt=grep("MT", rowData(sce)$Symbol)))
+discarded <- isOutlier(stats$subsets_Mt_percent, nmads=3, type="higher")
+sce$discarded <- discarded
+sum(discarded)
+```
+
+The mean-variance trend in the unfiltered dataset keeps going up, 
+consistent with our previous observations in the Grun pancreas data.
+
+```{r}
+library(scran)
+filtered <- sce[,!sce$discarded]
+filtered <- logNormCounts(filtered, use_altexps=FALSE)
+dec.f <- modelGeneVar(filtered)
+plot(metadata(dec.f)$mean, metadata(dec.f)$var)
+curve(metadata(dec.f)$trend(x), col="dodgerblue", add=TRUE)
+
+sce <- logNormCounts(sce, use_altexps=FALSE)
+dec.u <- modelGeneVar(sce)
+plot(metadata(dec.u)$mean, metadata(dec.u)$var)
+curve(metadata(dec.u)$trend(x), col="dodgerblue", add=TRUE)
+```
+
+The domination of the discarded cells in the PCA and $t$-SNE is even more obvious.
+
+```{r}
+set.seed(100)
+library(BiocSingular)
+sce <- runPCA(sce, subset_row=dec.u$bio > 0, BSPARAM=IrlbaParam())
+plotPCA(sce, colour_by="discarded")
+
+set.seed(101)
+sce <- runTSNE(sce, dimred="PCA")
+plotTSNE(sce, colour_by="discarded")
+```
+
+At least the discarded cells cluster together, and fortunately, the relevant cluster is identifiable based on the strong upregulation of mitochondrial genes.
+(Though this does raise the question of why we didn't just filter them out in the first place, if were going to use that metric to identify them.)
+
+```{r}
+g <- buildSNNGraph(sce, use.dimred="PCA")
+sce$cluster <- factor(igraph::cluster_walktrap(g)$membership)
+table(sce$cluster, sce$discarded)
+
+rownames(sce) <- uniquifyFeatureNames(
+    rowData(sce)$ID, rowData(sce)$Symbol)
+markers <- findMarkers(sce, sce$cluster, direction="up", lfc=1, full.stats=TRUE)
+as.data.frame(markers[[5]][1:20,1:3])
+```
+
+You might say that the mitochondrial proportion is not a good way of identifying low-quality cells.
+Fair enough, but if we had blinded ourselves to it, we wouldn't be able to identify this cluster as being low-quality based on its gene expression.
+There's at least a couple of genes that make it seems kind of biologically interesting.
+
+```{r}
+plotExpression(sce, x="cluster", 
+    features=c("IL7R", "CD69", "LTB", "MALAT1"),
+    colour_by="discarded")
+```
+
+# Session information
+
+```{r}
+sessionInfo()
+```
