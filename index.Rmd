@@ -12,6 +12,7 @@ Broad thoughts about practices in single-cell data analysis, not specific to my 
 
 **Comments:**
 
+- [Quality control](general/quality-control.html)
 - [Linearity](general/linearity.html)
 - [Transformation](general/transformation.html)
 - [Standardization](general/standardization.html)
