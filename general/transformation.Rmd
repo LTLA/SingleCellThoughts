@@ -212,7 +212,7 @@ plot(pc.sc$x[,1], pc.sc$x[,2], col=(libsize > 1)+1,
 `r CRANpkg("sctransform")` seems more performant in this example, with weaker structure associated with the library size.
 However, the advantage disappears when one introduces more complexity.
 The simulation below separates the cells into two populations, where each population contains a variety of libary sizes.
-After normalization, we should see only separation between populations.
+After normalization, we would hope to see only separation between those two populations and not due to library size.
 
 ```{r}
 means <- outer(mu, libsize)
@@ -248,6 +248,34 @@ plot(pcDS$x[,1], pcDS$x[,2], col=(libsize > 1)+1,
     main="DESeq2", xlab="PC1", ylab="PC2")
 plot(pcSC$x[,1], pcSC$x[,2], col=(libsize > 1)+1,
     main="sctransform", xlab="PC1", ylab="PC2")
+```
+
+We see the same effect in a more realistic example involving a continuous change in the library size.
+Here, the addition of a constant log-fold change introduces a library size-associated trajectory in the affected subpopulation.
+This is because a log-fold change at low abundance leads to a different Pearson residual than the same log-fold change at a high abundance, due to the differences in the mean-variance relationship.
+
+```{r, fig.wide=TRUE}
+set.seed(10000)
+libsize2 <- 2^rnorm(ncells)
+mu2 <- 2^runif(ngenes, -2, 5)
+means <- outer(mu2, libsize2)
+chosen <- sample(ncells, 50)
+means[1:100,chosen] <- means[1:100,chosen] * 5
+
+counts <- matrix(rnbinom(ngenes*ncells, mu=means, size=100), ncol=ncells)
+rownames(counts) <- sprintf("GENE_%i", seq_len(ngenes))
+colnames(counts) <- sprintf("CELL_%i", seq_len(ncells))
+
+# DESeq2's vst isn't happy with low counts, so we'll just
+# test sctransform here.
+outSC <- sctransform::vst(counts, show_progress=FALSE)
+pcSC <- prcomp(t(outSC$y))
+
+par(mfrow=c(1,2))
+plot(libsize2, outSC$y[3,], col=seq_along(libsize2) %in% chosen + 1, 
+    log="x", xlab="Library size", ylab="Residual", main="DE gene 1")
+plot(pcSC$x[,1], pcSC$x[,2], main="sctransform", xlab="PC1", ylab="PC2",
+    col=topo.colors(100)[cut(log2(libsize2), 100)], pch=16)
 ```
 
 ## Summary
