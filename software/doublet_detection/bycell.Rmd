@@ -90,13 +90,20 @@ This can be used for relative comparisons between cells, with high scores indica
 
 ## Density calculations
 
-We compute the density by applying a tricube-weighted kernel to the distances to the neighbouring cells.
-This is more robust than taking the $k$-nearest neighbours approach across all (simulated and original) cells, which is sensitive to the choice of $N_s$.
-If $N_s$ is too large, all of the $k$ nearest neighbours will be simulated, whie if $N_s$ is too small, all of the nearest neighbors will be original cells.
-
-The bandwidth of the kernel is defined as the median distance to the 50th nearest neighbours across all cells.
-This provides a threshold that adapts to the data and captures sufficient neighbours for stable density calculations.
+Previously, we computed the density by applying a tricube-weighted kernel to the distances to the neighbouring cells.
+The bandwidth of the kernel is defined as the median distance to the 50th nearest neighbour across all cells.
+The aim was to provide a threshold that adapts to the data and captures sufficient neighbours for stable density calculations.
 We use a constant bandwidth to make it easier to compare densities between cells (no need for normalization, less imprecision).
+
+Now, we simply count the proportion of cells in a hypersphere with radius set to the median distance to the 50th nearest neighbor.
+This is deliberately insensitive to distances within the hypersphere.
+In theory, the distance information should yield more accurate density estimates,
+but in practice, it yields excessively high densities for doublet populations that have few cells but are very compact.
+
+**Comment:** Many other doublet-based methods take a $k$-nearest neighbours approach to compute densities.
+This is faster but is sensitive to the choice of $N_s$.
+If $N_s$ is too large relative to the number of real cells, all of the $k$ nearest neighbours will be simulated, while if $N_s$ is too small, all of the nearest neighbors will be original cells.
+Our density calculations separate considerations of speed and precision (dependent on $N_s$) from the expected value of the density (independent of $N_s$), which enables more predictable function behavior.
 
 # Force matching
 
