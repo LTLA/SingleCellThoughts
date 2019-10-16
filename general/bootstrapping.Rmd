@@ -161,7 +161,7 @@ Larger Jaccard indices indicate that the cluster was mostly recovered in the boo
 
 The `clusterboot` approach relies on a mapping between cells in the original dataset to that in the bootstrap replicate.
 This is achieved by keeping track of the identities of the resampled cells in each bootstrap iteration.
-At first glance, this seems inappropriate as cell identities are altered by bootstrapping.
+At first glance, this seems inappropriate as cell identities are inherently altered by bootstrapping.
 However, if we did have a replicate, we could construct a mapping using a nearest-neighbour approach; 
 and the nearest neighbour of each resampled cell in the original dataset would simply be the cell-of-origin, as they have the same expression profile!
 
@@ -232,7 +232,9 @@ result4 <- do.call(rbind, result4)
 colMeans(result4)
 ```
 
-# Further comments
+# Interpreting the cluster stability
+
+## Difficulties
 
 The real problem with `clusterboot` is the interpretability of the Jaccard indices.
 A Jaccard index of 0.9 may be very good for cell types that are difficult to separate, e.g., various flavours of T cells.
@@ -246,6 +248,8 @@ Another issue is that cluster stability becomes contextual as soon as multiple c
 A cluster may not be stable with respect to separation from a neighbouring cluster, but may be very consistently separated from other distant clusters.
 Strictly speaking, it is true that such a cluster is unstable, but this is only relevant when considering the differences between the adjacent clusters.
 Interpreting a single stability metric per cluster is difficult as the reason for any low stability is not obvious (and may or may not be important).
+
+## Proposed solution
 
 We propose a more interpretable metric with the following procedure:
 
@@ -264,6 +268,26 @@ An interesting case involves that of rare cell populations, which may not even b
 This will result in a high co-assignment frequency as the closest new cluster will frequently correspond to another original cluster.
 As far as we are concerned, this is the correct result as the rare cell population cannot be consistently recovered in the bootstrap replicates.
 The closest original cluster will also have a high co-assignment frequency but only to the rare population, so interpretation of other separations is not compromised.
+
+# Does this even make sense?
+
+Bootstrapping aims to determine the stability of the clusters in a hypothetical replicate case.
+We would expect stability to increase with the number of cells as sampling noise becomes negligible;
+at some point, every cluster is probably stable according to bootstrapping, 
+which is technically correct but not helpful for determining whether clusters are reliable.
+Indeed, there is a large space between "this cluster separation is stable" and "this cluster separation is interesting",
+and bootstrapping only provides the former.
+
+Another problem is that bootstrapping fails to capture the true variability across samples.
+A bootstrap replicate is not a good representative of a real replicated experiment,
+which is generated from a different set of cells with different cell type composition and probably changes in expression.
+This means that bootstrapping will be overly optimistic with respect to what it considers to be reproducible.
+
+On the flipside, we might actually consider the comparisons between clusters to be far too strict.
+The clustering algorithm may collapse or split apart clusters due to the noise introduced by bootstrapping, 
+but it is often still possible to effectively recover the same clusters by tweaking the parameters for the boostrap replicate.
+In such cases, the scientific conclusions are reproducible across bootstrap replicates even if the exact co-assignments are not,
+and bootstrap-based stability calculations would be overly pessimistic.
 
 # Session information
 
