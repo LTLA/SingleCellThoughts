@@ -249,7 +249,7 @@ A cluster may not be stable with respect to separation from a neighbouring clust
 Strictly speaking, it is true that such a cluster is unstable, but this is only relevant when considering the differences between the adjacent clusters.
 Interpreting a single stability metric per cluster is difficult as the reason for any low stability is not obvious (and may or may not be important).
 
-## Proposed solution
+## Potential solution
 
 We propose a more interpretable metric with the following procedure:
 
@@ -271,23 +271,21 @@ The closest original cluster will also have a high co-assignment frequency but o
 
 # Does this even make sense?
 
-Bootstrapping aims to determine the stability of the clusters in a hypothetical replicate case.
+Bootstrapping aims to determine the stability of the clusters in a hypothetical replicate.
 We would expect stability to increase with the number of cells as sampling noise becomes negligible;
 at some point, every cluster is probably stable according to bootstrapping, 
 which is technically correct but not helpful for determining whether clusters are reliable.
 Indeed, there is a large space between "this cluster separation is stable" and "this cluster separation is interesting",
-and bootstrapping only provides the former.
+and bootstrapping only evaluates the former.
 
 Another problem is that bootstrapping fails to capture the true variability across samples.
-A bootstrap replicate is not a good representative of a real replicated experiment,
-which is generated from a different set of cells with different cell type composition and probably changes in expression.
+A bootstrap replicate is not a good representative of a genuine replicate generated from a different set of cells (most likely with different cell type composition and changes in expression).
 This means that bootstrapping will be overly optimistic with respect to what it considers to be reproducible.
 
-On the flipside, we might actually consider the comparisons between clusters to be far too strict.
-The clustering algorithm may collapse or split apart clusters due to the noise introduced by bootstrapping, 
+Conversely, we might actually consider the comparisons between clusters to be too strict.
+The clustering algorithm may merge or split apart clusters due to the noise introduced by bootstrapping, 
 but it is often still possible to effectively recover the same clusters by tweaking the parameters for the boostrap replicate.
-In such cases, the scientific conclusions are reproducible across bootstrap replicates even if the exact co-assignments are not,
-and bootstrap-based stability calculations would be overly pessimistic.
+In such cases, the scientific conclusions are reproducible across bootstrap replicates but bootstrap-based stability measures would be overly pessimistic.
 
 # Session information
 
