@@ -271,12 +271,10 @@ The closest original cluster will also have a high co-assignment frequency but o
 
 # Does this even make sense?
 
-Bootstrapping aims to determine the stability of the clusters in a hypothetical replicate.
-We would expect stability to increase with the number of cells as sampling noise becomes negligible;
-at some point, every cluster is probably stable according to bootstrapping, 
-which is technically correct but not helpful for determining whether clusters are reliable.
-Indeed, there is a large space between "this cluster separation is stable" and "this cluster separation is interesting",
-and bootstrapping only evaluates the former.
+A stable cluster is necessary but not sufficient to be actually useful.
+It also has to be functionally interesting, and this cannot be assessed by bootstrapping (or, for that matter, any stability measure).
+In fact, for datasets with many cells, it is likely that functional relevance is lost long before stability is compromised, given that the noise introduced by resampling has a decreasing effect on the distribution of cells on the biological manifold.
+This suggests that bootstrap stability is largely ineffective as a measure of cluster quality.
 
 Another problem is that bootstrapping fails to capture the true variability across samples.
 A bootstrap replicate is not a good representative of a genuine replicate generated from a different set of cells (most likely with different cell type composition and changes in expression).
