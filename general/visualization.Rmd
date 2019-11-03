@@ -1,0 +1,98 @@
+---
+title: Some thoughts on visualization
+author: Aaron Lun
+date: "`r Sys.Date()`"
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_float: true
+bibliography: ref.bib
+---   
+
+```{r, echo=FALSE, message=FALSE}
+library(BiocStyle)
+knitr::opts_chunk$set(error=FALSE, message=FALSE, warning=FALSE)
+set.seed(120000)
+```
+
+# Comments on dot plots
+
+For anyone who doesn't know what I'm talking about, it's the `r CRANpkg("Seurat")`-style dot plots here:
+
+```{r, fig.wide=TRUE, fig.asp=0.3}
+###########################
+### Setting up the data ###
+###########################
+
+library(scRNAseq)
+sce <- ZeiselBrainData()
+
+library(scran)
+library(scater)
+sce <- logNormCounts(sce)
+markers <- pairwiseTTests(logcounts(sce), sce$level1class)
+output <- getTopMarkers(markers[[1]], markers[[2]], n=2)
+
+features <- unlist(unlist(output))
+object <- sce
+group <- sce$level1class
+                                                                        
+#################################
+### Setting up the statistics ###
+#################################
+                                                                        
+num <- numDetectedAcrossCells(object, ids = group, 
+    subset_row = features, average = TRUE)
+ave <- sumCountsAcrossCells(object, ids = group, subset_row = features,
+    exprs_values="logcounts", average = TRUE)
+logfc <- ave - rowMeans(ave)
+
+#####################
+### Making a plot ###
+#####################
+
+rn <- factor(rownames(logfc))
+cn <- factor(colnames(logfc))
+evals_long <- data.frame(
+    Row = rep(rn, ncol(logfc)),
+    Col = rep(cn, each = nrow(logfc)), 
+    LogFC = as.numeric(logfc),
+    Percent = as.numeric(num)
+)
+
+ggplot(evals_long) + 
+    geom_point(aes(x=Row, y=Col, colour=LogFC, size=Percent)) +
+    scale_color_gradient2(low="blue", high="red")
+```
+
+The idea is to use the color to capture the log-fold change from the mean (or any other statistic) while using the size to represent the number of cells with detectable expression.
+This allows both statistics to be represented compactly for each gene and cluster in a single plot.
+The eye is naturally drawn towards the large red circles, allowing the reader to rapidly focus on candidate markers with strong positive log-fold changes and a high proportion of detected cells.
+More importantly, it looks pretty.
+
+However, the dot plot has a few deficiencies as an effective visualization tool.
+Many of them stem from the use of the point area to represent... well, anything, really.
+Humans are notoriously bad at judging areas (see Tufte, _The Visual Display of Quantitative Information_) so we cannot rely on two dimensions to accurately represent a one-dimensional quantity.
+Even worse is that the size of the point actively interferes with visualization of the log-fold change.
+We cannot easily see colors for small points, reducing the effectiveness of visualization for genes that are sporadically expressed but critical for cell type identity (e.g., _Cd4_).
+
+A related problem is that the use of size implicitly introduces a secondary color scale involving the background color.
+For a low-abundance gene in the above example, the plot transitions from red to grey/white as expression decreases.
+If this secondary scale overlaps with the primary color scale, it becomes difficult to interpret, e.g., does a white region of the plot represent a lack of any expression or detectable expression with a zero log-fold change?
+The issue arises even if the overlap in color scales is not exact - here, any light color that is similar to the background grey would be bad enough, especially if variations in screen/printer/eye quality are taken into account.
+
+One might argue that all of these issues can be swept aside if we are only interested in identifying high-quality marker genes.
+In such cases, readers only need to look for the presence of big red dots and avoid interpreting relative areas or conflicts with the background color.
+This is a valid perspective but the presence of the additional colors becomes an unnecessary distraction, e.g., an uninteresting gene/cluster combination can manifest as either a small dot or as a large blue dot.
+The reader should not be provided with two different representations that have the same interpretation.
+
+To ensure that readers interpret the dot plot in the "correct" way, we suggest forgoing any attempt to represent the uninteresting statistics faithfully.
+Rather, we suggest (i) capping the minimum log-fold change at zero and (ii) synchronizing the zero color with the background color.
+Any interpretation of the plot collapses to a simple "is it a big red dot or is it empty?" - there is no need to distinguish between zero log-fold changes and lack of expression, because we do not care to do so.
+(Some might complain that this discards information but, as we have discussed, there was no way to visualize that information effectively in the first place.)
+
+# Session information
+
+```{r}
+sessionInfo()
+```
