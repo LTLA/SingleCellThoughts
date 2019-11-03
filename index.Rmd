@@ -19,6 +19,7 @@ Broad thoughts about practices in single-cell data analysis, not specific to my 
 - [Clustering](general/clustering.html)
 - [Cellular detection rate](general/cdr.html)
 - [Bootstrapping](general/bootstrapping.html)
+- [Visualization](general/visualization.html)
 
 **Links:**
 
