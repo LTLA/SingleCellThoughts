@@ -83,12 +83,13 @@ The issue arises even if the overlap in color scales is not exact - here, any li
 
 One might argue that all of these issues can be swept aside if we are only interested in identifying high-quality marker genes.
 In such cases, readers only need to look for the presence of big red dots and avoid interpreting relative areas or conflicts with the background color.
-This is a valid perspective but the presence of the additional colors becomes an unnecessary distraction, e.g., an uninteresting gene/cluster combination can manifest as either a small dot or as a large blue dot.
-The reader should not be provided with two different representations that have the same interpretation.
+This is a valid perspective but the presence of the additional colors becomes an unnecessary distraction, e.g., an uninteresting gene/cluster combination can manifest either as a large blue dot or a small dot dominated by background color.
+The reader should not have to consider two different visualizations that have the same meaning.
 
-To ensure that readers interpret the dot plot in the "correct" way, we suggest forgoing any attempt to represent the uninteresting statistics faithfully.
-Rather, we suggest (i) capping the minimum log-fold change at zero and (ii) synchronizing the zero color with the background color.
-Any interpretation of the plot collapses to a simple "is it a big red dot or is it empty?" - there is no need to distinguish between zero log-fold changes and lack of expression, because we do not care to do so.
+To ensure that readers interpret the dot plot in the "correct" way, we suggest abandoning any attempt to represent the uninteresting parts of the plot faithfully.
+Rather, we cap the minimum log-fold change at zero and synchronize the color at zero with the background color.
+Any interpretation of the plot then collapses to a simple question - is it a big red dot or is it empty?
+There is no need to distinguish between zero log-fold changes and lack of expression, because we no longer care to do so.
 (Some might complain that this discards information but, as we have discussed, there was no way to visualize that information effectively in the first place.)
 
 # Session information
