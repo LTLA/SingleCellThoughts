@@ -83,8 +83,9 @@ The issue arises even if the overlap in color scales is not exact - here, any li
 
 One might argue that all of these issues can be swept aside if we are only interested in identifying high-quality marker genes.
 In such cases, readers only need to look for the presence of big red dots and avoid interpreting relative areas or conflicts with the background color.
-This is a valid perspective but the presence of the additional colors becomes an unnecessary distraction, e.g., an uninteresting gene/cluster combination can manifest either as a large blue dot or a small dot dominated by background color.
-The reader should not have to consider two different visualizations that have the same meaning.
+This is a valid perspective but the presence of the additional colors becomes an unnecessary distraction; an uninteresting gene/cluster combination can manifest either as a large blue dot or a small dot dominated by background color.
+We are left with a confusing color scale that progresses from red (most expressed) to white (less expression but many non-zeroes) to blue (even less expression, still many non-zeroes) to white (few non-zeroes). 
+The reader should not have to consider two different visual effects that have the same meaning.
 
 To ensure that readers interpret the dot plot in the "correct" way, we suggest abandoning any attempt to represent the uninteresting parts of the plot faithfully.
 Rather, we cap the minimum log-fold change at zero and synchronize the color at zero with the background color.
