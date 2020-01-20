@@ -252,13 +252,15 @@ plot(pcSC$x[,1], pcSC$x[,2], col=(libsize > 1)+1,
 
 We see the same effect in a more realistic example involving a continuous change in the library size.
 Here, the addition of a constant log-fold change introduces a library size-associated trajectory in the affected subpopulation.
-This is because a log-fold change at low abundance leads to a different Pearson residual than the same log-fold change at a high abundance, due to the differences in the mean-variance relationship.
+This is because a log-fold change at low abundance produces a different Pearson residual than the same log-fold change at a high abundance due to the change along the mean-variance relationship.
 
 ```{r, fig.wide=TRUE}
 set.seed(10000)
 libsize2 <- 2^rnorm(ncells)
 mu2 <- 2^runif(ngenes, -2, 5)
 means <- outer(mu2, libsize2)
+
+# Introducing a simulated DE population.
 chosen <- sample(ncells, 50)
 means[1:100,chosen] <- means[1:100,chosen] * 5
 
@@ -287,7 +289,9 @@ In practice, we would expect to see a smooth distribution of library sizes due t
 This means that any library size-related structure induced by transformation would more likely form spurious trajectories - 
 which, arguably, can be just as problematic.
 
-# Instability at low counts
+# Behavior at low counts
+
+## Variance instability of any transformation
 
 No transformation can achieve complete variance stabilization in scRNA-seq data [@lun2018overcoming], especially UMI data.
 At a mean of zero, the variance is necessarily zero.
@@ -300,7 +304,21 @@ If a sufficiently narrow interval is achieved, very low-abundance genes with few
 However, this is problematic given that Poisson noise dominates at such low counts.
 Upweighting this technical noise would probably be counter-productive.
 
-# Miscellaneous comments
+## In defence of the pseudo-count
+
+The log-transformation is often criticised due to the arbitrariness of choosing a pseudo-count to avoid undefined values at zero.
+However, this is no more arbitrary than deciding that relative differences are of greatest interest
+(and not, say, absolute differences in the counts, or differences in the root-means).
+Indeed, complaining about arbitrariness in an exploratory analysis is rather ironic,
+especially in light of the many downstream procedures that explicitly or implicitly involve arbitrary parameter choices. 
+
+In principle, the pseudo-count can be interpreted as a tuning parameter for the transformaation.
+This could conceivably be used to adjust the relative contribution of genes of different abundance.
+Higher pseudo-counts would reduce both noise and biological signal from low-abundance genes,
+providing a simple approach for analysts to modify their feature selection strategy.
+In practice, this is not done, probably because the (arbitrary) choice of pseudo-count makes little difference!
+
+# Miscellaneous comments on VSTs
 
 ## Library size regression
 
@@ -334,6 +352,34 @@ plot(
     xlab="Log expression variance",
     ylab="scTransform variance"
 )
+```
+
+As an entertaining aside, `r Biocpkg("sctransform")` is highly sensitive to even minor fluctuations in library size.
+This manifests most clearly when we generate data with large counts and very little variation in library size,
+as shown below with a slight adaptation of our previous trajectory simulations.
+It is not entirely clear what drives this effect; if I were to guess,
+I would say that the lack of variation reduces the precision of the model coefficients
+such that the residuals are computed from incorrect values that under- or overcompensate for the library size effect.
+
+```{r}
+set.seed(10000)
+libsize2 <- 2^rnorm(ncells, sd=0.01) # minor variation
+mu2 <- 2^runif(ngenes, -2, 5) * 100 # deep coverage
+means <- outer(mu2, libsize2) 
+
+# Introducing a simulated DE population.
+chosen <- sample(ncells, 50)
+means[1:100,chosen] <- means[1:100,chosen] * 5
+
+counts <- matrix(rnbinom(ngenes*ncells, mu=means, size=100), ncol=ncells)
+rownames(counts) <- sprintf("GENE_%i", seq_len(ngenes))
+colnames(counts) <- sprintf("CELL_%i", seq_len(ncells))
+
+outSC <- sctransform::vst(counts, show_progress=FALSE)
+pcSC <- prcomp(t(outSC$y))
+
+plot(pcSC$x[,1], pcSC$x[,2], main="sctransform", xlab="PC1", ylab="PC2",
+    col=topo.colors(100)[cut(log2(libsize2), 100)], pch=16)
 ```
 
 ## Interpretation of VST'd values
@@ -373,9 +419,14 @@ first <- 1:100
 g1 <- 1:100
 g2 <- 1:100+100
 outDS <- DESeq2::vst(counts)
-plot(mu[first], (rowMeans(outDS[first,g1]) - rowMeans(outDS[first,g2])), log="x")
+plot(mu[first], (rowMeans(outDS[first,g1]) - rowMeans(outDS[first,g2])), 
+    main="DESeq VST", ylab="Diff", xlab="Mean", log="x")
+abline(h=1, col="red")
+
 outL <- log2(counts + 1)
-plot(mu[first], (rowMeans(outL[first,g1]) - rowMeans(outL[first,g2])), log="x")
+plot(mu[first], (rowMeans(outL[first,g1]) - rowMeans(outL[first,g2])), 
+    main="Log-transformed", ylab="Diff", xlab="Mean", log="x")
+abline(h=1, col="red")
 ```
 
 ## Loss of sparsity
@@ -385,20 +436,6 @@ This affects the computational performance of all downstream analyses that are p
 One could avoid this by performing feature selection and the VST at the same time,
 such that the dense transformed values are only returned for the features of interest.
 However, it is questionable whether or not this provides benefits worth the increased complexity.
-
-## Pseudo-counts and log-transformation
-
-The log-transformation is often criticised due to the arbitrariness of choosing a pseudo-count.
-However, this is no more arbitrary than deciding that relative differences are of greatest interest
-(and not, say, absolute differences in the counts, or differences in the root-means).
-Indeed, complaining about arbitrariness in an exploratory analysis is rather ironic,
-especially in light of the many downstream procedures that explicitly or implicitly involve arbitrary parameter choices. 
-
-In principle, the pseudo-count can be interpreted as a tuning parameter for the transformaation.
-This could conceivably be used to adjust the relative contribution of genes of different abundance.
-Higher pseudo-counts would reduce both noise and biological signal from low-abundance genes,
-providing a simple approach for analysts to modify their feature selection strategy.
-In practice, this is not done, probably because the (arbitrary) choice of pseudo-count makes little difference!
 
 # Concluding remarks
 
