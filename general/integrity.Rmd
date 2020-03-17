@@ -11,14 +11,16 @@ For lack of anything better to do this week, I spent a fair amount of time readi
 It is no exaggeration to say that what I saw shook my faith in the scientific enterprise of biomedical research.
 Now, I've always been a glass-half-empty type of person so it doesn't take much for me to become cynical, but I had always believed that the scientific process was self-correcting and the truth would find its way out.
 However, it is no longer clear that this is the case.
-The most egregious examples of obvious fraud are the most sensational, but in all probability, these may just be the tip of the iceberg with respect to data manipulation and poor research practice.
-Indeed, this [article](https://royalsocietypublishing.org/doi/full/10.1098/rsos.160384) provides a fascinating analysis of how bad science can naturally come to dominate a research field without requiring any explicit fraudulent intent from the participants.
+The most egregious examples of obvious fraud are the most sensational, but I am beginning to suspect that these are just the tip of the iceberg with respect to data manipulation and poor research practice.
+Indeed, [this paper](https://royalsocietypublishing.org/doi/full/10.1098/rsos.160384) provides a fascinating analysis of how bad science can naturally come to dominate a research field without requiring any explicit fraudulent intent from the participants.
 
 A research field will - or _should_ - collapse if it is built on irreproducible foundations.
 This has [already happened](https://www.nature.com/articles/d41586-019-03755-2) with "social priming" in psychological research, and the fact that [cancer research](https://www.nature.com/articles/483531a) has not joined it is only attributable to our collective desire to be seen to do something about a disease that will eventually kill each one of us.
-The poor reproducibility of published conclusions is not merely academic - for example, the pharmaceutical industry relies on preclinical data to prioritize avenues of research, and false positives in the literature waste time and resources that could be better spent elsewhere to improve patient outcomes.
-Given these issues, can biomedical research be salvaged? 
-(In the scientific sense; from a financial perspective, the gravy train keeps on rolling with billions of dollars in public and private funding, so there's no problem there.)
+Is this corruption systematic?
+How much of biomedical research be salvaged? 
+(I speak strictly from a scientific perspective.
+Financially, the gravy train keeps on rolling with billions of dollars in public and private funding, so there's no problem there.)
+The poor reproducibility of published conclusions is not merely an academic problem - for example, the pharmaceutical industry relies on preclinical data to prioritize avenues of research, and false positives in the literature waste time and resources that could be better spent elsewhere to improve patient outcomes.
 
 Salvation of a research field is beyond my pay grade, but I will return to this with some comments at the end of the article.
 Right now, though, I will consider the opposite challenge - of exploiting the current system to its limits.
@@ -27,7 +29,7 @@ Why?
 Because - much like finding exploits in video games - it's fun.
 (As a disclaimer, I should add that, as far as I could tell, my former and current colleagues have only ever acted with the utmost integrity.
 In fact, I would wager that I was the most - ahem - "morally flexible" individual in any group that I worked in.
-That I never did anything questionable in my 40-odd publications is attributable more to apathy than any strength of character.)
+That I never did anything questionable in my 40-odd publications is attributable more to apathy than strength of character.)
 
 # Jumping down the slippery slope
 
@@ -41,13 +43,13 @@ Thus, we will begin our adventures in research misconduct by following our prede
 The first step is to improve the conclusions with some mild $p$-hacking and analytical tricks;
 the second step is to actively modify the data to inflate effect sizes and suppress negative results;
 and the third step is full-fledged data fabrication.
-At each step, we increate our active deviation from good practice, but we can simply remind ourselves of the rewards on offer - a CNS paper! A million-euro ERC grant! - to drown out what is left of our conscience.
-I also note that this process is facilitated by peer review, for one can simply adjust their position on the slippery slope to satisfy the reviewers. 
+At each step, we increase our active deviation from good practice, but we can simply remind ourselves of the rewards on offer - a CNS paper! A million-euro ERC grant! - to drown out what is left of our conscience.
+I also note that this process is quite effectively facilitated by peer review, for one can simply adjust their position on the slippery slope to satisfy the reviewers. 
 (To paraphrase Matthew: what the reviewers ask for, they shall receive.)
 
 That said, it would be prudent to stick to the truth as much as possible.
-Not for any moral reason, of course; this is simply to provide a greater level of plausible deniability if anyone ever attempts to reproduce your published "results".
-Indeed, true connoisseurs of the art will do their best work on publications that are (i) just important enough to have an impact on promotion or funding yet (ii) not important enough to warrant follow-up by other researchers.
+Not because we have scruples, of course; this is simply to provide a greater level of plausible deniability if anyone ever attempts to reproduce our published "results".
+Indeed, true connoisseurs of the art will do their best work on publications that are (i) just important enough to have an impact on promotion or funding yet (ii) not important enough to warrant an attempt at replication by other researchers.
 This avoids a visceral reaction from the community in response to an obviously implausible result such as the [acid-bath stem cells](https://www.newscientist.com/article/dn25831-acid-bath-stem-cell-papers-are-finally-retracted).
 
 # Massaging the analysis
@@ -64,13 +66,20 @@ In genomics, anyone admitting to doing this would be shamed,
 but it seems that this attitude has yet to catch on to the wider research community. 
 It would be a rare paper indeed that controls the family-wise error rate across all of its comparisons, as I imagine that many borderline differences would become non-significant and thus unpublishable.
 
-The beauty of these methods lies in the fact that they can be virtually undetectable.
-Simply present the data _sans_ outlier as the entirety of the original dataset;
-similarly, present the lone significant comparison as the only one that was ever tested.
+The beauty of these methods is two-fold:
+
+- They are virtually undetectable; simply present the data _sans_ outlier as the entirety of the original dataset,
+or the lone significant comparison as the only one that was ever tested.
 No reader will be capable of proving otherwise,
 and even determined investigators can be countered by delaying any record keeping until after the analysis complete 
 (so that we know to omit records for the undesired data points or non-significant results).
-Even in the rare case that this is uncovered, all is not lost as these are accepted practices in some fields!
+- In the rare case that someone figures out what was done, all is not lost.
+We could state that it is accepted practice in the field;
+failing that, we could plead innocence via ignorance of proper statistics;
+failing even that, we could make an excuse about accidentally overlooking it
+(typically accompanied by laying the blame on a grad student).
+Of course, an effective excuse depends on a believable level of obfuscating stupidity,
+making it difficult to pull off for trained statisticians.
 
 # Modifying data
 
@@ -92,12 +101,16 @@ though some care may be required to mask it with a light sprinkling of Gaussian 
 Advanced practitioners can cover their tracks by inverting the transformation to modify the raw intensities in the FCS files.
 - Images are difficult to forge as the human eye is very good at detecting non-random patterns due to artifacts of manipulation.
 Indeed, the presence of manipulated Western blots (and to a lesser extent, microscopy images) often serves as the basis for detection of scientific fraud on PubPeer.
-Nonetheless, if this is unavoidable, it is advisable to cut-and-paste from other figures,
+Nonetheless, if these modifications must be performed, it is advisable to cut-and-paste from other figures,
 only use each cut-and-pasted element once,
 and become familiar with the "blur" tool in Photoshop to eliminate edge effects upon pasting.
 
-In certain cases, modification of the data can be effectively undetectable.
-However, one should continue to ensure that the paper trail is similarly modified for consistency.
+Done carefully, modification of the data can be effectively undetectable.
+One should always ensure that the upstream paper trail is similarly modified for consistency,
+e.g., modifying the FASTQ files when working with manipulated summaries like count matrices.
+This can be problematic if the original files are stored separately by independent entities such as core facilities or CROs;
+check the relevant policies for your organization.
+(That said, if investigators are determined enough to get that far, you may have bigger problems on your hands.)
 
 # Fabricating data
 
@@ -118,3 +131,38 @@ Moreover, this approach does not leave a strong paper trail that can withstand a
 
 # Solutions
 
+Replicability is the solution.
+None of the strategies discussed here will hold up to an attempt to independently replicate the result.
+The question is exactly how a replication framework should be implemented.
+In some sense, this is already done in an _ad hoc_ manner by the scientific community whenever a result of interest is published,
+where we can judge the validity of a paper's conclusions based on the presence of follow-up studies by independent labs.
+However, this requires independent labs willing to invest effort and time to reproduce a result;
+furthermore, irreproducible findings cannot be easily identified or pruned from the literature.
+In the meantime, the fraudsters have moved on to different research fields with new grants, laughing all the way to the bank.
+
+To this end, I read with great interest [this article](https://www.nature.com/articles/d41586-020-00672-7) in _Nature_.
+(Yes, my hard copy of _Nature_. 
+For some long-forgotten reason, I have a personal subscription.)
+The authors discuss the use of "Independent Validation and Verification" (IV&V) teams to replicate studies that are funded by DARPA.
+The idea is that the funded research team will work with an IV&V team throughout the lifetime of the project, passing on all required protocols and technical know-how to enable the IV&V team to reproduce the results. 
+This strategy ensures that the research is replicable before it hits the literature,
+avoiding the inefficiency of the informal community-driven validation process.
+In fact, co-operation with the IV&V team is a condition of funding, an attitude that I found most impressive.
+
+Now, I can already anticipate the major criticism of this approach: who will pay for this?
+The obvious answer is the same entities that are funding biomedical research right now.
+It would be fair to say that the scientific community would prefer a smaller number of reliable results
+compared to twice the results with a who-knows-what level of reproducibility.
+Of course, it means that the funding rate will be halved as more resources are diverted to IV&V,
+but this is a feature and not a bug;
+staff with the requisite skills can be recruited from academic labs into IV&V teams
+where they might enjoy stable incomes and incentives that are not tied to publication output.
+Snootier academics may dismiss the ability of IV&V teams to reproduce their work,
+but if a dedicated team cannot reproduce a result, would anyone be able to?
+And if no one can reproduce a result, is it science, or is it art?
+
+Regardless of the exact solution, it is clear that the current situation is not sustainable.
+Vast amounts of money with no accountability inevitably lead to corruption, conscious or otherwise.
+At some point, it will be more than the public will be willing to bear,
+and government bodies like ORI will be given teeth to match the strength of regulatory oversight in other industries.
+Quite simply, either we clean up our mess or the politicians will do it for us.
