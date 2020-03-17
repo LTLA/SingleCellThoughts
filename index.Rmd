@@ -51,3 +51,9 @@ Justifications for some of the parameter choices and strategies in my scRNA-seq 
 
 - [Quality control](software/correlations/qc.html) (`r BiocStyle::Biocpkg("simpleSingleCell")`)
 - [Cell cycle detection](software/marker_detection/cycling.html) (`r BiocStyle::Biocpkg("simpleSingleCell")`)
+
+# Other
+
+Some collected miscellaneous thoughts:
+
+- [Research integrity](general/integrity.html)
