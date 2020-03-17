@@ -1,0 +1,38 @@
+---
+title: Quis custodiet ipsos custodes?
+author: Aaron Lun
+date: "`r Sys.Date()`"
+output: BiocStyle::html_document
+---   
+
+# Background
+
+For lack of anything better to do this week, I spent a fair amount of time reading [Leonid Schneider's blog](https://forbetterscience.com/). 
+It is no exaggeration to say that what I saw shook my faith in the scientific enterprise of biomedical research.
+Now, I've always been a glass-half-empty type of person so it doesn't take much for me to become cynical, but I had always believed that the scientific process was self-correcting and the truth would find its way out.
+However, it is no longer clear that this is the case.
+The most egregious examples of obvious fraud are the most sensational, but in all probability, these may just be the tip of the iceberg with respect to data manipulation and poor research practice.
+Indeed, this [article](https://royalsocietypublishing.org/doi/full/10.1098/rsos.160384) provides a fascinating analysis of how bad science can naturally come to dominate a research field without requiring any explicit fraudulent intent from the participants.
+
+A research field will - or _should_ - collapse if it is built on irreproducible foundations.
+This has [already happened](https://www.nature.com/articles/d41586-019-03755-2) with "social priming" in psychological research, and the fact that [cancer research](https://www.nature.com/articles/483531a) has not joined it is only attributable to our collective desire to be seen to do something about a disease that will eventually kill each one of us.
+The poor reproducibility of published conclusions is not merely academic - for example, the pharmaceutical industry relies on preclinical data to prioritize avenues of research, and false positives in the literature waste time and resources that could be better spent elsewhere to improve patient outcomes.
+Given these issues, can biomedical research be salvaged? 
+(In the scientific sense; from a financial perspective, the gravy train keeps on rolling with billions of dollars in public and private funding, so there's no problem there.)
+
+Salvation of a research field is beyond my pay grade, but I will return to this with some comments at the end of the article.
+Right now, though, I will consider the opposite challenge - of exploiting the current system to its limits.
+The following sections contain some of my thoughts on how an unscrupulous individual could abuse the trust-based framework of academic publishing to achieve a successful "scientific" career. 
+Why? 
+Because - much like finding exploits in video games - it's fun.
+(As a disclaimer, I should add that, as far as I could tell, my former and current colleagues have only ever acted with the utmost integrity.
+In fact, I would wager that I was the most - ahem - "morally flexible" individual in any group that I worked in.
+That I never did anything questionable in my 40-odd publications is attributable more to apathy than any strength of character.)
+
+# Exploiting the system
+
+# Solutions
+
+
+
+
