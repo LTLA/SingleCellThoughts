@@ -7,7 +7,7 @@ output:
     toc: true
     toc_float: true
 bibliography: ref.bib
----   
+---
 
 ```{r, echo=FALSE, message=FALSE}
 library(BiocStyle)
@@ -384,28 +384,12 @@ plot(pcSC$x[,1], pcSC$x[,2], main="sctransform", xlab="PC1", ylab="PC2",
 
 ## Interpretation of VST'd values
 
-The transformed values from `r CRANpkg("sctransform")` exhibit no relation to the original scale of the (log-)counts.
-This is not a problem for exploratory analyses but makes it difficult to interpret differential expression analyses.
-
-```{r}
-ngenes <- 10000
-means <- 2^sort(runif(ngenes, 0, 10))
-ncells <- 500
-
-counts <- matrix(rnbinom(ngenes*ncells, mu=means, size=10), ncol=ncells)
-rownames(counts) <- sprintf("GENE_%i", seq_len(ngenes))
-colnames(counts) <- sprintf("CELL_%i", seq_len(ncells))
-
-outSC <- sctransform::vst(counts, show_progress=FALSE)
-smoothScatter(matrixStats::rowVars(log2(counts+1)),
-    matrixStats::rowVars(outSC$y))
-```
-
-`r Biocpkg("DESeq2")`'s VST converges to the log-fold change at high abundances but it is not entirely faultless.
-A strong mean-dispersion trend is sufficient to induce major discrepancies, 
+In theory, the `r Biocpkg("DESeq2")`'s VST converges to the log-transformation at high abundances.
+Thus, differences in the VST values should converge to the log-fold change... eventually.
+However, a strong mean-dispersion trend is sufficient to induce major discrepancies from the true value, 
 even when the counts should have been sufficiently large to obtain an accurate log-fold change estimate.
 
-```{r}
+```{r, fig.asp=1}
 ngenes <- 10000
 ncells <- 200
 
@@ -414,20 +398,38 @@ dispersion <- 10/mu + 0.1
 means <- ADD_DE(mu, ncells)
 counts <- matrix(rnbinom(ngenes*ncells, mu=means, 
     size=1/dispersion), ncol=ncells)
+rownames(counts) <- sprintf("GENE_%i", seq_len(ngenes))
+colnames(counts) <- sprintf("CELL_%i", seq_len(ncells))
 
-first <- 1:100
 g1 <- 1:100
 g2 <- 1:100+100
-outDS <- DESeq2::vst(counts)
-plot(mu[first], (rowMeans(outDS[first,g1]) - rowMeans(outDS[first,g2])), 
-    main="DESeq VST", ylab="Diff", xlab="Mean", log="x")
-abline(h=1, col="red")
+col <- rep("black", nrow(counts))
+col[1:100] <- "red"
+col[1:100 + 100] <- "blue"
 
-outL <- log2(counts + 1)
-plot(mu[first], (rowMeans(outL[first,g1]) - rowMeans(outL[first,g2])), 
-    main="Log-transformed", ylab="Diff", xlab="Mean", log="x")
-abline(h=1, col="red")
+outDS <- DESeq2::vst(counts)
+plot(mu, (rowMeans(outDS[,g1]) - rowMeans(outDS[,g2])), 
+    main="DESeq VST", ylab="Diff", xlab="Mean", log="x", col=col)
+abline(h=c(-1, 1), col="grey", lty=2, lwd=2)
+
+outSC <- sctransform::vst(counts, show_progress=FALSE)
+plot(mu, rowMeans(outSC$y[,g1]) - rowMeans(outSC$y[,g2]), 
+    main="scTransform", ylab="Diff", xlab="Mean", log="x", col=col)
+abline(h=c(-1, 1), col="grey", lty=2, lwd=2)
+
+outL <- log2(counts + 1) # no differences in library sizes, no need to normalize.
+plot(mu, (rowMeans(outL[,g1]) - rowMeans(outL[,g2])), 
+    main="Log-transformed", ylab="Diff", xlab="Mean", log="x", col=col)
+abline(h=c(-1, 1), col="grey", lty=2, lwd=2)
 ```
+
+`r CRANpkg("sctransform")` has a similar dependency on the mean in its log-fold changes.
+In fact, its behavior is almost exactly the same as as `r Biocpkg("DESeq2")` with just a scaling difference in the values.
+This makes it a bit more difficult to interpret the magnitude of the effect sizes in differential expression analyses.
+
+The log-transformation doesn't have this problem as it recovers the true log-fold changes for our DE genes.
+That said, we do see more variability in the log-fold changes among the non-DE genes, consistent with the log-transformation's deficiencies in variance stabilization.
+It seems that we can't have our cake and eat it too: we can either stabilize the variance for non-DE genes or get accurate log-fold changes for DE genes, but not both.
 
 ## Loss of sparsity
 
